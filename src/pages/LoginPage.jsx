@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Phone, Key, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Lock, Phone, Key, ArrowRight, ShieldCheck, AlertCircle, Wrench } from 'lucide-react';
 import { BUSINESS_INFO } from '../lib/types';
 import { DataStore } from '../lib/store';
+import { Capacitor } from '@capacitor/core';
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const isNative = Capacitor.isNativePlatform();
+
   const [mobileNumber, setMobileNumber] = useState('');
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -35,9 +38,9 @@ export default function LoginPage() {
         DataStore.logActivity(foundUser.name, 'Staff Login', 'Logged in successfully');
 
         if (foundUser.role === 'Field Technician') {
-          navigate('/tech-portal');
+          navigate('/tech-portal', { replace: true });
         } else {
-          navigate('/admin/dashboard');
+          navigate('/admin/dashboard', { replace: true });
         }
       } else {
         setErrorMsg('Invalid Mobile Number or Password.');
@@ -51,57 +54,67 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-[85vh] flex items-center justify-center px-4 py-12">
-      <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
+    <div className={`min-h-screen flex items-center justify-center p-4 ${isNative ? 'bg-slate-950 text-white' : 'bg-slate-900/90 text-slate-900'}`}>
+      <div className="max-w-sm w-full bg-slate-900 text-white rounded-3xl shadow-2xl border border-slate-800 overflow-hidden space-y-0">
         
-        {/* Header */}
-        <div className="bg-slate-900 text-white p-6 text-center space-y-2">
-          <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-emerald-500 mx-auto shadow-lg shadow-emerald-600/30">
-            <img src="/logo.jpeg" alt="Kanha Door House" className="w-full h-full object-cover object-center" />
+        {/* App Header Banner */}
+        <div className="bg-slate-950 p-6 text-center space-y-3 border-b border-slate-800">
+          <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-emerald-500 mx-auto shadow-xl shadow-emerald-500/20 bg-white flex items-center justify-center">
+            <img src="/logo.jpeg" alt="Kanha Door House Logo" className="w-full h-full object-cover object-center" />
           </div>
-          <h2 className="text-xl font-extrabold tracking-tight">Staff & Admin Login</h2>
-          <p className="text-xs text-slate-400">
-            {BUSINESS_INFO.name} • GSTIN: {BUSINESS_INFO.gstin}
-          </p>
+          <div>
+            <h1 className="text-xl font-extrabold tracking-tight text-white">{BUSINESS_INFO.name}</h1>
+            <div className="text-[11px] text-emerald-400 font-bold uppercase tracking-wider mt-0.5">
+              ERP & Mobile Duty Application
+            </div>
+            <p className="text-[10px] text-slate-500 font-mono mt-1">
+              GSTIN: {BUSINESS_INFO.gstin}
+            </p>
+          </div>
         </div>
 
         {/* Form Body */}
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-5 bg-slate-900">
           
+          <div className="text-center space-y-1">
+            <h2 className="text-sm font-bold text-slate-200">Staff Account Authentication</h2>
+            <p className="text-xs text-slate-400">Log in with registered mobile number & password</p>
+          </div>
+
           {errorMsg && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            <div className="p-3 bg-red-950/80 border border-red-800 rounded-xl text-xs text-red-300 font-medium flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
               <span>{errorMsg}</span>
             </div>
           )}
 
           <form onSubmit={handleLoginSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Staff Mobile Number *</label>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Mobile Phone Number *</label>
               <div className="relative">
-                <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <Phone className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="text"
                   required
                   placeholder="Enter 10-digit mobile number"
                   value={mobileNumber}
                   onChange={e => setMobileNumber(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2.5 border rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  className="w-full pl-10 pr-3 py-2.5 bg-slate-950 border border-slate-700/80 rounded-xl text-xs font-bold text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Password / Passcode *</label>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Passcode / Password *</label>
               <div className="relative">
-                <Key className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <Key className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="password"
                   required
                   placeholder="Enter password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2.5 border rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  className="w-full pl-10 pr-3 py-2.5 bg-slate-950 border border-slate-700/80 rounded-xl text-xs font-bold text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition-colors"
                 />
               </div>
             </div>
@@ -109,19 +122,21 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-slate-900 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-lg transition-colors flex items-center justify-center gap-2"
+              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
-              {loading ? 'Authenticating...' : (
+              {loading ? (
+                <span>Authenticating Session...</span>
+              ) : (
                 <>
-                  Log In to Portal <ArrowRight className="w-4 h-4 text-emerald-400" />
+                  <span>Sign In To App</span> <ArrowRight className="w-4 h-4 text-white" />
                 </>
               )}
             </button>
           </form>
 
-          <div className="text-[11px] text-slate-400 text-center flex items-center justify-center gap-1 pt-2 border-t border-slate-100">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Discreet Management Access • Kanha Door House</span>
+          <div className="text-[11px] text-slate-500 text-center flex items-center justify-center gap-1 pt-2 border-t border-slate-800">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Secure Real-time Firestore & Cloudinary Application</span>
           </div>
 
         </div>
