@@ -32,7 +32,7 @@ export default function HomePage() {
     const text = encodeURIComponent(
       `Hello Kanha Door House,\nI would like an official quote for:\n\n*Product:* ${productCategory}\n*Dimensions:* ${width}ft x ${height}ft (${sqFt} sq.ft)\n*Quantity:* ${quantity} units\n*Glass/Option:* ${glassType}\n*Estimated Price:* ~₹${estimatedPrice.toLocaleString('en-IN')}\n\n*Name:* ${customerName}\n*Phone:* ${customerPhone}\n*Location:* Jamalpur/Bihar`
     );
-    window.open(`https://wa.me/919504083165?text=${text}`, '_blank');
+    window.open(`https://wa.me/919835206464?text=${text}`, '_blank');
   };
 
   return (
