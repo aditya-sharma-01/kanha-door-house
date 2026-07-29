@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Kanha Door House ERP</string>
+    <string name="title_activity_main">Kanha Door House ERP</string>
+    <string name="package_name">com.kanhadoorhouse.app</string>
+    <string name="custom_url_scheme">com.kanhadoorhouse.app</string>
+</resources>

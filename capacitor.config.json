@@ -1,0 +1,14 @@
+{
+  "appId": "com.kanhadoorhouse.app",
+  "appName": "Kanha Door House ERP",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": true
+  }
+}
