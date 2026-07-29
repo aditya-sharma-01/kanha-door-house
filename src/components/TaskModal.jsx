@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { X, Wrench, Save } from 'lucide-react';
+import { X, Wrench, Save, Plus, Trash2, Layers } from 'lucide-react';
 
-export default function TaskModal({ task: initialTask, invoices = [], staff = [], onClose, onSave }) {
+export default function TaskModal({ task: initialTask, invoices = [], staff = [], inventory = [], onClose, onSave }) {
   // Filter all active staff or technicians
   const fitters = staff.length > 0
     ? staff.filter(s => s.status !== 'Inactive')
@@ -21,8 +21,12 @@ export default function TaskModal({ task: initialTask, invoices = [], staff = []
     status: 'Pending Installation',
     specs: 'UPVC / WPVC Machine Cut Fittings',
     notes: '',
-    completionPhotoUrl: null
+    completionPhotoUrl: null,
+    allocatedMaterials: []
   });
+
+  const [selectedItemId, setSelectedItemId] = useState(inventory[0]?.id || '');
+  const [selectedQty, setSelectedQty] = useState(1);
 
   const handleInvoiceSelect = (invId) => {
     const selectedInv = invoices.find(i => i.id === invId);
@@ -46,6 +50,41 @@ export default function TaskModal({ task: initialTask, invoices = [], staff = []
       ...prev,
       assignedTechnician: techName,
       technicianPhone: foundTech ? foundTech.phone : ''
+    }));
+  };
+
+  const handleAddMaterial = () => {
+    if (!selectedItemId) return;
+    const invItem = inventory.find(i => i.id === selectedItemId);
+    if (!invItem) return;
+
+    const qty = Number(selectedQty) || 1;
+    const existing = (task.allocatedMaterials || []).findIndex(m => m.itemId === invItem.id);
+
+    let updatedMats = [...(task.allocatedMaterials || [])];
+    if (existing >= 0) {
+      updatedMats[existing] = {
+        ...updatedMats[existing],
+        plannedQty: updatedMats[existing].plannedQty + qty,
+        actualQty: (updatedMats[existing].actualQty || updatedMats[existing].plannedQty) + qty,
+      };
+    } else {
+      updatedMats.push({
+        itemId: invItem.id,
+        name: invItem.name,
+        unit: invItem.unit,
+        plannedQty: qty,
+        actualQty: qty,
+      });
+    }
+
+    setTask(prev => ({ ...prev, allocatedMaterials: updatedMats }));
+  };
+
+  const handleRemoveMaterial = (index) => {
+    setTask(prev => ({
+      ...prev,
+      allocatedMaterials: (prev.allocatedMaterials || []).filter((_, i) => i !== index)
     }));
   };
 
@@ -142,6 +181,81 @@ export default function TaskModal({ task: initialTask, invoices = [], staff = []
               className="w-full px-3 py-2 border rounded-lg"
               placeholder="e.g. Fit 2 UPVC 3-Track Windows & 1 WPVC Door"
             ></textarea>
+          </div>
+
+          {/* MATERIAL ALLOCATION SECTION */}
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+            <div className="flex justify-between items-center">
+              <label className="block text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                <Layers className="w-4 h-4 text-emerald-600" /> Allocate Stock Materials & Hardware for Task
+              </label>
+              <span className="text-[10px] text-slate-500 font-medium">Auto-deducts from Firestore upon completion</span>
+            </div>
+
+            {/* Material Selector Row */}
+            <div className="flex flex-col sm:flex-row gap-2">
+              <select
+                value={selectedItemId}
+                onChange={e => setSelectedItemId(e.target.value)}
+                className="flex-grow px-3 py-2 border rounded-lg bg-white text-xs"
+              >
+                {inventory.length === 0 ? (
+                  <option value="">No Stock Items Available in Inventory</option>
+                ) : (
+                  inventory.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} (Stock: {item.stock} {item.unit})
+                    </option>
+                  ))
+                )}
+              </select>
+              <input
+                type="number"
+                min="1"
+                value={selectedQty}
+                onChange={e => setSelectedQty(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-20 px-3 py-2 border rounded-lg text-xs"
+                placeholder="Qty"
+              />
+              <button
+                type="button"
+                onClick={handleAddMaterial}
+                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1 shrink-0"
+              >
+                <Plus className="w-4 h-4" /> Add Material
+              </button>
+            </div>
+
+            {/* List of Allocated Materials */}
+            {(!task.allocatedMaterials || task.allocatedMaterials.length === 0) ? (
+              <div className="text-[11px] text-slate-400 italic text-center py-1">
+                No stock materials allocated to this task yet.
+              </div>
+            ) : (
+              <div className="space-y-1.5 pt-1">
+                {task.allocatedMaterials.map((mat, idx) => (
+                  <div key={idx} className="flex justify-between items-center bg-white p-2.5 rounded-lg border border-slate-200 text-xs">
+                    <div>
+                      <span className="font-bold text-slate-800">{mat.name}</span>
+                      <span className="text-slate-500 font-mono text-[11px] ml-2">[{mat.itemId}]</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        {mat.plannedQty} {mat.unit}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveMaterial(idx)}
+                        className="text-red-500 hover:text-red-700 p-1"
+                        title="Remove material"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

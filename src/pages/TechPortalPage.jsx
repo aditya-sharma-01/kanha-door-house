@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { 
   Wrench, Phone, MapPin, CheckCircle2, Clock, ArrowLeft, 
   Upload, FileText, Calendar, AlertCircle, Play, Check, Navigation,
-  UserCheck, Shield, ChevronRight, Camera, RefreshCw, MessageSquare, LogOut, Image, X
+  UserCheck, Shield, ChevronRight, Camera, RefreshCw, MessageSquare, LogOut, Image, X, Layers, Plus, Minus
 } from 'lucide-react';
 import { DataStore } from '../lib/store';
 import { BUSINESS_INFO } from '../lib/types';
@@ -16,6 +16,7 @@ export default function TechPortalPage() {
 
   const [tasks, setTasks] = useState([]);
   const [staff, setStaff] = useState([]);
+  const [inventory, setInventory] = useState([]);
   const [statusTab, setStatusTab] = useState('ALL'); // 'ALL', 'Pending Installation', 'In Progress', 'Installed'
   const [viewAllTeamTasks, setViewAllTeamTasks] = useState(false);
   
@@ -23,6 +24,7 @@ export default function TechPortalPage() {
   const [noteInputs, setNoteInputs] = useState({});
   const [photoFiles, setPhotoFiles] = useState({});
   const [photoPreviews, setPhotoPreviews] = useState({});
+  const [taskMaterials, setTaskMaterials] = useState({});
   const [updatingTaskId, setUpdatingTaskId] = useState(null);
   const [uploadStatusMsg, setUploadStatusMsg] = useState({});
 
@@ -44,14 +46,17 @@ export default function TechPortalPage() {
     // Load cache immediately for fast render
     setTasks(DataStore.getTasks());
     setStaff(DataStore.getStaff());
+    setInventory(DataStore.getInventory());
 
     // Sync live from Firestore
     Promise.all([
       DataStore.fetchTasks(),
-      DataStore.fetchStaff()
-    ]).then(([fetchedTasks, fetchedStaff]) => {
+      DataStore.fetchStaff(),
+      DataStore.fetchInventory()
+    ]).then(([fetchedTasks, fetchedStaff, fetchedInventory]) => {
       setTasks(fetchedTasks);
       setStaff(fetchedStaff);
+      setInventory(fetchedInventory);
     });
   }, [navigate]);
 
@@ -84,6 +89,34 @@ export default function TechPortalPage() {
     });
   };
 
+  const getTaskMaterialsList = (task) => {
+    if (!task) return [];
+    if (taskMaterials[task.id] !== undefined) {
+      return taskMaterials[task.id];
+    }
+    return task.allocatedMaterials || [];
+  };
+
+  const handleAdjustMaterialQty = (taskId, matIndex, delta) => {
+    setTaskMaterials(prev => {
+      const currentTask = tasks.find(t => t.id === taskId);
+      const currentList = prev[taskId] !== undefined
+        ? [...prev[taskId]]
+        : [...(currentTask?.allocatedMaterials || [])];
+
+      if (currentList[matIndex]) {
+        const curActual = currentList[matIndex].actualQty !== undefined
+          ? currentList[matIndex].actualQty
+          : currentList[matIndex].plannedQty;
+        currentList[matIndex] = {
+          ...currentList[matIndex],
+          actualQty: Math.max(0, curActual + delta),
+        };
+      }
+      return { ...prev, [taskId]: currentList };
+    });
+  };
+
   const handleStatusTransition = async (taskId, newStatus) => {
     // If completing installation, enforce MANDATORY Cloudinary photo proof
     if (newStatus === 'Installed') {
@@ -104,7 +137,10 @@ export default function TechPortalPage() {
       }
 
       const note = noteInputs[taskId] || null;
-      const updated = await DataStore.updateTaskStatus(taskId, newStatus, photoUrl, note);
+      const targetTask = tasks.find(t => t.id === taskId);
+      const currentMaterials = getTaskMaterialsList(targetTask);
+
+      const updated = await DataStore.updateTaskStatus(taskId, newStatus, photoUrl, note, currentMaterials);
       setTasks(updated);
 
       // Clean up local task inputs
@@ -304,6 +340,7 @@ export default function TechPortalPage() {
               const isInProgress = task.status === 'In Progress';
               const isPending = task.status === 'Pending Installation';
               const previewUrl = photoPreviews[task.id];
+              const matsList = getTaskMaterialsList(task);
 
               return (
                 <div
@@ -362,7 +399,77 @@ export default function TechPortalPage() {
                       </p>
                       {task.specs && (
                         <div className="text-[11px] text-slate-400 pt-1.5 border-t border-slate-800/60">
-                          <strong className="text-slate-300">Materials:</strong> {task.specs}
+                          <strong className="text-slate-300">Materials Note:</strong> {task.specs}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ALLOCATED & USED STOCK MATERIALS SECTION */}
+                    <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2.5">
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="font-extrabold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-emerald-400" /> Allocated Materials & Usage
+                        </span>
+                        {!isInstalled && (
+                          <span className="text-[10px] text-amber-400 font-bold">Adjust Used Quantity (- / +)</span>
+                        )}
+                      </div>
+
+                      {matsList.length === 0 ? (
+                        <div className="text-[11px] text-slate-500 italic">
+                          No specific stock materials allocated for this task.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {matsList.map((mat, idx) => {
+                            const planned = mat.plannedQty || 0;
+                            const actual = mat.actualQty !== undefined ? mat.actualQty : planned;
+
+                            return (
+                              <div key={idx} className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800/80 flex justify-between items-center text-xs">
+                                <div>
+                                  <div className="font-bold text-white text-xs">{mat.name}</div>
+                                  <div className="text-[10px] text-slate-400">
+                                    Planned: <span className="text-slate-300 font-bold">{planned} {mat.unit}</span>
+                                  </div>
+                                </div>
+
+                                {!isInstalled ? (
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-slate-400 font-bold">Used:</span>
+                                    <div className="flex items-center bg-slate-950 border border-slate-700 rounded-xl p-0.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAdjustMaterialQty(task.id, idx, -1)}
+                                        className="w-7 h-7 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-amber-400 font-black rounded-lg text-sm active:scale-95 transition-all cursor-pointer"
+                                        title="Decrease quantity"
+                                      >
+                                        -
+                                      </button>
+                                      <span className="w-8 text-center font-extrabold font-mono text-emerald-400 text-xs">
+                                        {actual}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAdjustMaterialQty(task.id, idx, 1)}
+                                        className="w-7 h-7 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-emerald-400 font-black rounded-lg text-sm active:scale-95 transition-all cursor-pointer"
+                                        title="Increase quantity"
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-right">
+                                    <span className="text-[10px] text-slate-400 block">Actually Used:</span>
+                                    <span className="font-extrabold text-emerald-400 font-mono text-xs">
+                                      {actual} {mat.unit}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -546,7 +653,7 @@ export default function TechPortalPage() {
                       {isInstalled && (
                         <div className="bg-emerald-950/60 border border-emerald-800/80 p-3 rounded-xl text-center text-xs font-bold text-emerald-300 flex items-center justify-center gap-2">
                           <Check className="w-4 h-4 text-emerald-400" />
-                          Installation Verified & Cloudinary Synced
+                          Installation Verified & Stock Deducted in Firestore
                         </div>
                       )}
 

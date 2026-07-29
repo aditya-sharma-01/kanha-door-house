@@ -180,7 +180,7 @@ export class DataStore {
     return updated;
   }
 
-  static async updateTaskStatus(taskId, status, photoUrl, notes) {
+  static async updateTaskStatus(taskId, status, photoUrl, notes, updatedMaterials) {
     var tasks = await DataStore.fetchTasks();
     var targetTech = 'Technician';
     var changedTask = null;
@@ -194,10 +194,26 @@ export class DataStore {
         installedDate: status === 'Installed'
           ? new Date().toISOString().slice(0, 16).replace('T', ' ')
           : (t.installedDate || null),
+        allocatedMaterials: updatedMaterials !== undefined ? updatedMaterials : (t.allocatedMaterials || []),
       });
       return changedTask;
     });
-    if (changedTask) await firestoreUpsert(COL.tasks, changedTask);
+
+    if (changedTask) {
+      await firestoreUpsert(COL.tasks, changedTask);
+
+      // Deduct used material quantities from Firestore inventory stock when installed
+      if (status === 'Installed' && Array.isArray(changedTask.allocatedMaterials)) {
+        for (var i = 0; i < changedTask.allocatedMaterials.length; i++) {
+          var mat = changedTask.allocatedMaterials[i];
+          var usedQty = Number(mat.actualQty !== undefined ? mat.actualQty : mat.plannedQty) || 0;
+          if (usedQty > 0 && mat.itemId) {
+            await DataStore.updateStock(mat.itemId, -usedQty);
+          }
+        }
+      }
+    }
+
     writeCache(COL.tasks, updated);
     DataStore.logActivity(targetTech, 'Changed Task Status', 'Task ' + taskId + ' -> "' + status + '"');
     return updated;
