@@ -3,10 +3,11 @@ import { useNavigate, Link } from 'react-router-dom';
 import { 
   Wrench, Phone, MapPin, CheckCircle2, Clock, ArrowLeft, 
   Upload, FileText, Calendar, AlertCircle, Play, Check, Navigation,
-  UserCheck, Shield, ChevronRight, Camera, RefreshCw, MessageSquare, LogOut
+  UserCheck, Shield, ChevronRight, Camera, RefreshCw, MessageSquare, LogOut, Image, X
 } from 'lucide-react';
 import { DataStore } from '../lib/store';
 import { BUSINESS_INFO } from '../lib/types';
+import { uploadImageToCloudinary } from '../lib/cloudinary';
 
 export default function TechPortalPage() {
   const navigate = useNavigate();
@@ -20,8 +21,10 @@ export default function TechPortalPage() {
   
   // Interactive state per task
   const [noteInputs, setNoteInputs] = useState({});
-  const [photoInputs, setPhotoInputs] = useState({});
+  const [photoFiles, setPhotoFiles] = useState({});
+  const [photoPreviews, setPhotoPreviews] = useState({});
   const [updatingTaskId, setUpdatingTaskId] = useState(null);
+  const [uploadStatusMsg, setUploadStatusMsg] = useState({});
 
   useEffect(() => {
     let loggedUser = null;
@@ -57,27 +60,67 @@ export default function TechPortalPage() {
     navigate('/admin');
   };
 
-  const handleStatusTransition = async (taskId, newStatus) => {
-    setUpdatingTaskId(taskId);
-    const note = noteInputs[taskId] || null;
-    const photoUrl = photoInputs[taskId] || (newStatus === 'Installed' 
-      ? 'https://images.unsplash.com/photo-1534349735944-2b3a6f7a268f?w=600&auto=format&fit=crop&q=60' 
-      : null);
+  const handlePhotoSelect = (taskId, file) => {
+    if (!file) return;
+    setPhotoFiles(prev => ({ ...prev, [taskId]: file }));
 
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPhotoPreviews(prev => ({ ...prev, [taskId]: reader.result }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeSelectedPhoto = (taskId) => {
+    setPhotoFiles(prev => {
+      const copy = { ...prev };
+      delete copy[taskId];
+      return copy;
+    });
+    setPhotoPreviews(prev => {
+      const copy = { ...prev };
+      delete copy[taskId];
+      return copy;
+    });
+  };
+
+  const handleStatusTransition = async (taskId, newStatus) => {
+    // If completing installation, enforce MANDATORY Cloudinary photo proof
+    if (newStatus === 'Installed') {
+      const file = photoFiles[taskId];
+      if (!file) {
+        alert('📷 MANDATORY PHOTO PROOF REQUIRED!\n\nPlease snap or upload a completion photo of the installed frame/door before marking as completed.');
+        return;
+      }
+    }
+
+    setUpdatingTaskId(taskId);
     try {
+      let photoUrl = null;
+      if (newStatus === 'Installed' && photoFiles[taskId]) {
+        setUploadStatusMsg(prev => ({ ...prev, [taskId]: 'Uploading photo to Cloudinary...' }));
+        photoUrl = await uploadImageToCloudinary(photoFiles[taskId]);
+        setUploadStatusMsg(prev => ({ ...prev, [taskId]: 'Photo uploaded! Updating Firestore...' }));
+      }
+
+      const note = noteInputs[taskId] || null;
       const updated = await DataStore.updateTaskStatus(taskId, newStatus, photoUrl, note);
       setTasks(updated);
+
+      // Clean up local task inputs
       setNoteInputs(prev => ({ ...prev, [taskId]: '' }));
+      removeSelectedPhoto(taskId);
     } catch (err) {
-      console.error('Task update failed:', err);
-      alert('Failed to sync task status to Firestore.');
+      console.error('Task update error:', err);
+      alert(`Upload/Sync Failed: ${err.message || 'Error updating task.'}`);
     } finally {
       setUpdatingTaskId(null);
+      setUploadStatusMsg(prev => ({ ...prev, [taskId]: '' }));
     }
   };
 
   const openGoogleMaps = (address) => {
-    const encoded = encodeURIComponent(address + ', Bihar');
+    const encoded = encodeURIComponent((address || '') + ', Bihar');
     window.open(`https://www.google.com/maps/search/?api=1&query=${encoded}`, '_blank');
   };
 
@@ -123,7 +166,7 @@ export default function TechPortalPage() {
               <div className="text-[11px] text-slate-400 flex items-center gap-1">
                 <span>{BUSINESS_INFO.name}</span>
                 <span>•</span>
-                <span className="text-emerald-400 font-semibold">Live Firestore Sync</span>
+                <span className="text-emerald-400 font-semibold">Cloudinary & Firestore</span>
               </div>
             </div>
           </div>
@@ -260,6 +303,7 @@ export default function TechPortalPage() {
               const isInstalled = task.status === 'Installed';
               const isInProgress = task.status === 'In Progress';
               const isPending = task.status === 'Pending Installation';
+              const previewUrl = photoPreviews[task.id];
 
               return (
                 <div
@@ -325,8 +369,6 @@ export default function TechPortalPage() {
 
                     {/* Site Location & Phone Quick Actions */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      
-                      {/* Call Client Action Button */}
                       <a
                         href={`tel:${(task.customerPhone || '').replace(/\s/g,'')}`}
                         className="flex items-center justify-between p-3 rounded-xl bg-emerald-950/40 hover:bg-emerald-950/80 border border-emerald-800/60 text-emerald-300 transition-colors"
@@ -343,7 +385,6 @@ export default function TechPortalPage() {
                         </span>
                       </a>
 
-                      {/* Google Maps Directions Button */}
                       <button
                         onClick={() => openGoogleMaps(task.installationAddress || '')}
                         className="flex items-center justify-between p-3 rounded-xl bg-blue-950/40 hover:bg-blue-950/80 border border-blue-800/60 text-blue-300 transition-colors text-left"
@@ -359,7 +400,6 @@ export default function TechPortalPage() {
                           MAPS ➔
                         </span>
                       </button>
-
                     </div>
 
                     {/* Instructions & Notes */}
@@ -374,13 +414,64 @@ export default function TechPortalPage() {
                       </div>
                     )}
 
+                    {/* DYNAMIC & MANDATORY CLOUDINARY PHOTO PROOF CAPTURE SECTION */}
+                    {isInProgress && (
+                      <div className="space-y-2 bg-slate-950 p-3.5 rounded-xl border border-amber-500/40">
+                        <div className="flex justify-between items-center text-xs">
+                          <label className="font-extrabold text-amber-400 flex items-center gap-1.5">
+                            <Camera className="w-4 h-4 text-amber-400" /> Snap / Upload Photo Proof <span className="text-red-400">* Mandatory</span>
+                          </label>
+                          <span className="text-[10px] text-slate-500">Cloudinary Secured</span>
+                        </div>
+
+                        {previewUrl ? (
+                          <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-800 bg-slate-900">
+                            <img src={previewUrl} alt="Selected proof preview" className="w-full h-full object-cover" />
+                            <button
+                              onClick={() => removeSelectedPhoto(task.id)}
+                              className="absolute top-2 right-2 p-1.5 bg-red-600 hover:bg-red-700 text-white rounded-full shadow"
+                              title="Remove photo"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                            <div className="absolute bottom-2 left-2 bg-slate-900/80 px-2 py-1 rounded text-[10px] text-emerald-400 font-bold">
+                              ✓ Ready for Cloudinary Upload
+                            </div>
+                          </div>
+                        ) : (
+                          <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-800 hover:border-amber-500/60 rounded-xl cursor-pointer bg-slate-900/60 hover:bg-slate-900 transition-all text-center space-y-2">
+                            <Camera className="w-8 h-8 text-amber-400" />
+                            <div>
+                              <div className="text-xs font-bold text-slate-200">Tap to Capture or Upload Photo</div>
+                              <div className="text-[10px] text-slate-500">Supports Camera & Gallery image files</div>
+                            </div>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              className="hidden"
+                              onChange={e => e.target.files && handlePhotoSelect(task.id, e.target.files[0])}
+                            />
+                          </label>
+                        )}
+                      </div>
+                    )}
+
                     {/* Completion Photo Proof if installed */}
                     {isInstalled && task.completionPhotoUrl && (
                       <div className="space-y-1.5 bg-slate-950 p-3 rounded-xl border border-slate-800">
-                        <div className="text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
-                          <Camera className="w-3.5 h-3.5" /> Verified Completion Photo Proof
+                        <div className="text-[11px] font-bold text-emerald-400 flex items-center justify-between">
+                          <span className="flex items-center gap-1.5"><Camera className="w-3.5 h-3.5" /> Verified Cloudinary Photo Proof</span>
+                          <a
+                            href={task.completionPhotoUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] text-emerald-400 hover:underline font-mono"
+                          >
+                            Open Full HD ↗
+                          </a>
                         </div>
-                        <div className="aspect-video rounded-lg overflow-hidden border border-slate-800 bg-slate-900 max-h-48">
+                        <div className="aspect-video rounded-lg overflow-hidden border border-slate-800 bg-slate-900 max-h-56">
                           <img
                             src={task.completionPhotoUrl}
                             alt="Installation proof"
@@ -408,6 +499,14 @@ export default function TechPortalPage() {
                           onChange={e => setNoteInputs({ ...noteInputs, [task.id]: e.target.value })}
                           className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500"
                         />
+                      </div>
+                    )}
+
+                    {/* Upload progress message */}
+                    {uploadStatusMsg[task.id] && (
+                      <div className="p-2.5 bg-emerald-950/80 border border-emerald-800 text-emerald-300 text-xs rounded-xl font-bold flex items-center gap-2 animate-pulse">
+                        <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+                        <span>{uploadStatusMsg[task.id]}</span>
                       </div>
                     )}
 
@@ -440,14 +539,14 @@ export default function TechPortalPage() {
                           ) : (
                             <CheckCircle2 className="w-5 h-5" />
                           )}
-                          ✓ COMPLETE & VERIFY INSTALLATION IN FIRESTORE
+                          ✓ UPLOAD PROOF TO CLOUDINARY & COMPLETE TASK
                         </button>
                       )}
 
                       {isInstalled && (
                         <div className="bg-emerald-950/60 border border-emerald-800/80 p-3 rounded-xl text-center text-xs font-bold text-emerald-300 flex items-center justify-center gap-2">
                           <Check className="w-4 h-4 text-emerald-400" />
-                          Installation Completed & Real-Time Synced
+                          Installation Verified & Cloudinary Synced
                         </div>
                       )}
 
