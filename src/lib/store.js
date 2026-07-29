@@ -1,289 +1,315 @@
+// store.js - Firestore is the ONLY source of truth.
+// localStorage is ONLY a render-speed cache.
+// An empty Firestore = empty UI. No hardcoded seed data.
+
 import {
-  collection, doc, getDoc, getDocs, setDoc, deleteDoc,
-  addDoc, serverTimestamp, query, orderBy, limit, onSnapshot
+  collection, doc, getDocs, setDoc, deleteDoc, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { INITIAL_INVOICES, INITIAL_TASKS, INITIAL_INVENTORY, INITIAL_STAFF, INITIAL_PURCHASES, INITIAL_ACTIVITY_LOGS } from './types';
+import { BOOTSTRAP_SUPER_ADMIN } from './types';
 
-// ─── Local cache helpers (read-through / write-through) ───────────────────────
-const getLocalCache = (key, defaultValue) => {
-  if (typeof window === 'undefined') return defaultValue;
+// Cache helpers
+const cacheKey = (col) => 'kdh_v2_' + col;
+
+const readCache = (col) => {
   try {
-    const stored = localStorage.getItem(`kdh_${key}`);
-    return stored ? JSON.parse(stored) : defaultValue;
-  } catch { return defaultValue; }
+    const raw = localStorage.getItem(cacheKey(col));
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
 };
 
-const setLocalCache = (key, value) => {
-  if (typeof window !== 'undefined') {
-    try { localStorage.setItem(`kdh_${key}`, JSON.stringify(value)); }
-    catch (e) { console.warn('localStorage write failed:', e); }
-  }
+const writeCache = (col, data) => {
+  try { localStorage.setItem(cacheKey(col), JSON.stringify(data)); }
+  catch (e) { console.warn('Cache write failed:', e); }
 };
 
-// ─── Generic Firestore helpers ─────────────────────────────────────────────────
+const clearCache = (col) => {
+  try { localStorage.removeItem(cacheKey(col)); }
+  catch (e) {}
+};
+
+// Collection names
 const COL = {
-  invoices: 'invoices',
-  purchases: 'purchases',
-  tasks: 'tasks',
-  inventory: 'inventory',
-  staff: 'staff',
+  invoices:      'invoices',
+  purchases:     'purchases',
+  tasks:         'tasks',
+  inventory:     'inventory',
+  staff:         'staff',
   activity_logs: 'activity_logs',
 };
 
-/** Fetch all documents from a collection, return as array */
-async function fetchAll(colName) {
-  try {
-    const snap = await getDocs(collection(db, colName));
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  } catch (e) {
-    console.error(`Firestore fetchAll(${colName}) failed:`, e);
-    return null; // caller falls back to local cache
-  }
+// Fetch all docs from a Firestore collection
+async function firestoreFetchAll(colName) {
+  const snap = await getDocs(collection(db, colName));
+  return snap.docs.map(function(d) {
+    var data = Object.assign({}, d.data());
+    delete data._updatedAt;
+    delete data._seeded;
+    data.id = d.id;
+    return data;
+  });
 }
 
-/** Upsert a document using its own `id` field as the Firestore doc ID */
-async function upsertDoc(colName, item) {
-  try {
-    const ref = doc(db, colName, String(item.id));
-    await setDoc(ref, { ...item, _updatedAt: serverTimestamp() }, { merge: true });
-  } catch (e) {
-    console.error(`Firestore upsertDoc(${colName}) failed:`, e);
-  }
+// Upsert a document (doc ID = item.id)
+async function firestoreUpsert(colName, item) {
+  var clean = Object.assign({}, item);
+  delete clean._updatedAt;
+  var ref = doc(db, colName, String(clean.id));
+  await setDoc(ref, Object.assign({}, clean, { _updatedAt: serverTimestamp() }), { merge: true });
 }
 
-/** Delete a document by id */
-async function removeDoc(colName, id) {
-  try {
-    await deleteDoc(doc(db, colName, String(id)));
-  } catch (e) {
-    console.error(`Firestore removeDoc(${colName}, ${id}) failed:`, e);
-  }
+// Hard-delete a document
+async function firestoreDelete(colName, id) {
+  await deleteDoc(doc(db, colName, String(id)));
 }
 
-/** Seed Firestore with initial data if collection is empty */
-async function seedIfEmpty(colName, initialData) {
+// Bootstrap Super Admin only if staff collection is completely empty
+var _bootstrapped = false;
+async function bootstrapSuperAdmin() {
+  if (_bootstrapped) return;
+  _bootstrapped = true;
   try {
-    const snap = await getDocs(collection(db, colName));
+    var snap = await getDocs(collection(db, COL.staff));
     if (snap.empty) {
-      await Promise.all(initialData.map(item =>
-        setDoc(doc(db, colName, String(item.id)), { ...item, _seeded: true })
-      ));
-      console.log(`[Firebase] Seeded ${colName} with ${initialData.length} records.`);
+      await firestoreUpsert(COL.staff, BOOTSTRAP_SUPER_ADMIN);
+      console.log('[KDH] Bootstrapped Super Admin account in Firestore.');
     }
   } catch (e) {
-    console.error(`Firestore seed(${colName}) failed:`, e);
+    console.error('[KDH] Bootstrap failed:', e);
   }
 }
 
-// Seed all collections on first run
-(async () => {
-  await Promise.all([
-    seedIfEmpty(COL.invoices, INITIAL_INVOICES),
-    seedIfEmpty(COL.purchases, INITIAL_PURCHASES),
-    seedIfEmpty(COL.tasks, INITIAL_TASKS),
-    seedIfEmpty(COL.inventory, INITIAL_INVENTORY),
-    seedIfEmpty(COL.staff, INITIAL_STAFF),
-    seedIfEmpty(COL.activity_logs, INITIAL_ACTIVITY_LOGS),
-  ]);
-})();
+bootstrapSuperAdmin();
 
-// ─── DataStore ─────────────────────────────────────────────────────────────────
 export class DataStore {
 
-  // ── INVOICES ────────────────────────────────────────────────────────────────
-  static getInvoices() {
-    return getLocalCache('invoices', INITIAL_INVOICES);
-  }
+  // INVOICES
+  static getInvoices() { return readCache(COL.invoices); }
 
   static async fetchInvoices() {
-    const data = await fetchAll(COL.invoices);
-    if (data) setLocalCache('invoices', data);
-    return data || this.getInvoices();
+    var data = await firestoreFetchAll(COL.invoices);
+    data.sort(function(a, b) { return (b.date || '').localeCompare(a.date || ''); });
+    writeCache(COL.invoices, data);
+    return data;
   }
 
   static async saveInvoice(invoice) {
-    await upsertDoc(COL.invoices, invoice);
-    const list = this.getInvoices();
-    const idx = list.findIndex(i => i.id === invoice.id);
-    const updated = idx >= 0
-      ? list.map(i => i.id === invoice.id ? invoice : i)
-      : [invoice, ...list];
-    setLocalCache('invoices', updated);
-    this.logActivity('Staff', idx >= 0 ? 'Updated Invoice' : 'Created Invoice',
-      `${invoice.id} for ${invoice.customerName} (₹${invoice.total?.toLocaleString('en-IN')})`);
+    await firestoreUpsert(COL.invoices, invoice);
+    var list = readCache(COL.invoices);
+    var idx = list.findIndex(function(i) { return i.id === invoice.id; });
+    var updated = idx >= 0
+      ? list.map(function(i) { return i.id === invoice.id ? invoice : i; })
+      : [invoice].concat(list);
+    writeCache(COL.invoices, updated);
+    DataStore.logActivity('Staff', idx >= 0 ? 'Updated Invoice' : 'Created Invoice',
+      invoice.id + ' -- ' + invoice.customerName + ' (Rs.' + (invoice.total || 0).toLocaleString('en-IN') + ')');
     return updated;
   }
 
-  // ── PURCHASES (ITC) ─────────────────────────────────────────────────────────
-  static getPurchases() {
-    return getLocalCache('purchases', INITIAL_PURCHASES);
+  static async deleteInvoice(id) {
+    await firestoreDelete(COL.invoices, id);
+    var updated = readCache(COL.invoices).filter(function(i) { return i.id !== id; });
+    writeCache(COL.invoices, updated);
+    DataStore.logActivity('Staff', 'Deleted Invoice', 'Invoice ' + id + ' removed');
+    return updated;
   }
 
+  // PURCHASES (ITC)
+  static getPurchases() { return readCache(COL.purchases); }
+
   static async fetchPurchases() {
-    const data = await fetchAll(COL.purchases);
-    if (data) setLocalCache('purchases', data);
-    return data || this.getPurchases();
+    var data = await firestoreFetchAll(COL.purchases);
+    data.sort(function(a, b) { return (b.date || '').localeCompare(a.date || ''); });
+    writeCache(COL.purchases, data);
+    return data;
   }
 
   static async savePurchase(purchase) {
-    await upsertDoc(COL.purchases, purchase);
-    const list = this.getPurchases();
-    const idx = list.findIndex(p => p.id === purchase.id);
-    const updated = idx >= 0
-      ? list.map(p => p.id === purchase.id ? purchase : p)
-      : [purchase, ...list];
-    setLocalCache('purchases', updated);
-    this.logActivity('Super Admin', 'Recorded Purchase Bill (ITC)',
-      `Bill No: ${purchase.billNumber} from ${purchase.supplierName}`);
+    await firestoreUpsert(COL.purchases, purchase);
+    var list = readCache(COL.purchases);
+    var idx = list.findIndex(function(p) { return p.id === purchase.id; });
+    var updated = idx >= 0
+      ? list.map(function(p) { return p.id === purchase.id ? purchase : p; })
+      : [purchase].concat(list);
+    writeCache(COL.purchases, updated);
+    DataStore.logActivity('Super Admin', 'Recorded Purchase Bill',
+      purchase.billNumber + ' from ' + purchase.supplierName);
     return updated;
   }
 
-  // ── TASKS ───────────────────────────────────────────────────────────────────
-  static getTasks() {
-    return getLocalCache('tasks', INITIAL_TASKS);
+  static async deletePurchase(id) {
+    await firestoreDelete(COL.purchases, id);
+    var updated = readCache(COL.purchases).filter(function(p) { return p.id !== id; });
+    writeCache(COL.purchases, updated);
+    return updated;
   }
 
+  // TASKS
+  static getTasks() { return readCache(COL.tasks); }
+
   static async fetchTasks() {
-    const data = await fetchAll(COL.tasks);
-    if (data) setLocalCache('tasks', data);
-    return data || this.getTasks();
+    var data = await firestoreFetchAll(COL.tasks);
+    data.sort(function(a, b) { return (b.deadline || '').localeCompare(a.deadline || ''); });
+    writeCache(COL.tasks, data);
+    return data;
   }
 
   static async saveTask(task) {
-    await upsertDoc(COL.tasks, task);
-    const list = this.getTasks();
-    const idx = list.findIndex(t => t.id === task.id);
-    const updated = idx >= 0
-      ? list.map(t => t.id === task.id ? task : t)
-      : [task, ...list];
-    setLocalCache('tasks', updated);
-    this.logActivity('Staff', idx >= 0 ? 'Updated Task' : 'Allocated Task',
-      `${task.id} → ${task.assignedTechnician} for ${task.customerName}`);
+    await firestoreUpsert(COL.tasks, task);
+    var list = readCache(COL.tasks);
+    var idx = list.findIndex(function(t) { return t.id === task.id; });
+    var updated = idx >= 0
+      ? list.map(function(t) { return t.id === task.id ? task : t; })
+      : [task].concat(list);
+    writeCache(COL.tasks, updated);
+    DataStore.logActivity('Staff', idx >= 0 ? 'Updated Task' : 'Allocated Task',
+      task.id + ' -> ' + task.assignedTechnician + ' for ' + task.customerName);
     return updated;
   }
 
-  static async updateTaskStatus(taskId, status, photoUrl = null, notes = null) {
-    const tasks = this.getTasks();
-    let targetTech = 'Technician';
-    const updated = tasks.map(t => {
+  static async deleteTask(id) {
+    await firestoreDelete(COL.tasks, id);
+    var updated = readCache(COL.tasks).filter(function(t) { return t.id !== id; });
+    writeCache(COL.tasks, updated);
+    DataStore.logActivity('Staff', 'Deleted Task', 'Task ' + id + ' removed');
+    return updated;
+  }
+
+  static async updateTaskStatus(taskId, status, photoUrl, notes) {
+    var tasks = await DataStore.fetchTasks();
+    var targetTech = 'Technician';
+    var changedTask = null;
+    var updated = tasks.map(function(t) {
       if (t.id !== taskId) return t;
       targetTech = t.assignedTechnician;
-      return {
-        ...t, status,
-        ...(photoUrl ? { completionPhotoUrl: photoUrl } : {}),
-        ...(notes ? { notes: `${t.notes || ''}\n[Tech Note]: ${notes}` } : {}),
-        ...(status === 'Installed' ? { installedDate: new Date().toISOString().slice(0, 16).replace('T', ' ') } : {}),
-      };
+      changedTask = Object.assign({}, t, {
+        status: status,
+        completionPhotoUrl: photoUrl || t.completionPhotoUrl,
+        notes: notes ? ((t.notes || '') + '\n[Tech Note]: ' + notes) : t.notes,
+        installedDate: status === 'Installed'
+          ? new Date().toISOString().slice(0, 16).replace('T', ' ')
+          : t.installedDate,
+      });
+      return changedTask;
     });
-    const changedTask = updated.find(t => t.id === taskId);
-    if (changedTask) await upsertDoc(COL.tasks, changedTask);
-    setLocalCache('tasks', updated);
-    this.logActivity(targetTech, 'Changed Task Status', `Task ${taskId} → "${status}"`);
+    if (changedTask) await firestoreUpsert(COL.tasks, changedTask);
+    writeCache(COL.tasks, updated);
+    DataStore.logActivity(targetTech, 'Changed Task Status', 'Task ' + taskId + ' -> "' + status + '"');
     return updated;
   }
 
-  // ── INVENTORY ───────────────────────────────────────────────────────────────
-  static getInventory() {
-    return getLocalCache('inventory', INITIAL_INVENTORY);
-  }
+  // INVENTORY
+  static getInventory() { return readCache(COL.inventory); }
 
   static async fetchInventory() {
-    const data = await fetchAll(COL.inventory);
-    if (data) setLocalCache('inventory', data);
-    return data || this.getInventory();
+    var data = await firestoreFetchAll(COL.inventory);
+    data.sort(function(a, b) { return (a.name || '').localeCompare(b.name || ''); });
+    writeCache(COL.inventory, data);
+    return data;
   }
 
   static async saveInventoryItem(item) {
-    await upsertDoc(COL.inventory, item);
-    const list = this.getInventory();
-    const idx = list.findIndex(i => i.id === item.id);
-    const updated = idx >= 0
-      ? list.map(i => i.id === item.id ? item : i)
-      : [item, ...list];
-    setLocalCache('inventory', updated);
-    this.logActivity('Staff', 'Updated Inventory', `${item.name}: ${item.stock} ${item.unit}`);
+    await firestoreUpsert(COL.inventory, item);
+    var list = readCache(COL.inventory);
+    var idx = list.findIndex(function(i) { return i.id === item.id; });
+    var updated = idx >= 0
+      ? list.map(function(i) { return i.id === item.id ? item : i; })
+      : list.concat([item]);
+    writeCache(COL.inventory, updated);
+    DataStore.logActivity('Staff', 'Updated Inventory', item.name + ': ' + item.stock + ' ' + item.unit);
+    return updated;
+  }
+
+  static async deleteInventoryItem(id) {
+    await firestoreDelete(COL.inventory, id);
+    var updated = readCache(COL.inventory).filter(function(i) { return i.id !== id; });
+    writeCache(COL.inventory, updated);
+    DataStore.logActivity('Staff', 'Deleted Inventory Item', 'Item ' + id + ' removed');
     return updated;
   }
 
   static async updateStock(itemId, quantityDelta) {
-    const items = this.getInventory();
-    let itemName = '';
-    const updated = items.map(item => {
+    var items = readCache(COL.inventory);
+    var itemName = '';
+    var changedItem = null;
+    var updated = items.map(function(item) {
       if (item.id !== itemId) return item;
       itemName = item.name;
-      return { ...item, stock: Math.max(0, item.stock + quantityDelta) };
+      changedItem = Object.assign({}, item, { stock: Math.max(0, (item.stock || 0) + quantityDelta) });
+      return changedItem;
     });
-    const changed = updated.find(i => i.id === itemId);
-    if (changed) await upsertDoc(COL.inventory, changed);
-    setLocalCache('inventory', updated);
-    this.logActivity('Staff', 'Stock Adjustment',
-      `${itemName} adjusted by ${quantityDelta > 0 ? '+' : ''}${quantityDelta}`);
+    if (changedItem) await firestoreUpsert(COL.inventory, changedItem);
+    writeCache(COL.inventory, updated);
+    DataStore.logActivity('Staff', 'Stock Adjustment',
+      itemName + ' adjusted by ' + (quantityDelta > 0 ? '+' : '') + quantityDelta);
     return updated;
   }
 
-  // ── STAFF ───────────────────────────────────────────────────────────────────
-  static getStaff() {
-    return getLocalCache('staff', INITIAL_STAFF);
-  }
+  // STAFF
+  static getStaff() { return readCache(COL.staff); }
 
   static async fetchStaff() {
-    const data = await fetchAll(COL.staff);
-    if (data) setLocalCache('staff', data);
-    return data || this.getStaff();
+    var data = await firestoreFetchAll(COL.staff);
+    data.sort(function(a, b) { return (a.createdDate || '').localeCompare(b.createdDate || ''); });
+    writeCache(COL.staff, data);
+    return data;
   }
 
   static async saveStaff(member) {
-    await upsertDoc(COL.staff, member);
-    const list = this.getStaff();
-    const idx = list.findIndex(s => s.id === member.id);
-    const updated = idx >= 0
-      ? list.map(s => s.id === member.id ? member : s)
-      : [member, ...list];
-    setLocalCache('staff', updated);
-    this.logActivity('Super Admin', idx >= 0 ? 'Updated Staff Credential' : 'Added Staff Account',
-      `${member.name} (${member.phone}) — ${member.role}`);
+    await firestoreUpsert(COL.staff, member);
+    var list = readCache(COL.staff);
+    var idx = list.findIndex(function(s) { return s.id === member.id; });
+    var updated = idx >= 0
+      ? list.map(function(s) { return s.id === member.id ? member : s; })
+      : list.concat([member]);
+    writeCache(COL.staff, updated);
+    DataStore.logActivity('Super Admin', idx >= 0 ? 'Updated Staff Credential' : 'Added Staff Account',
+      member.name + ' (' + member.phone + ') -- ' + member.role);
     return updated;
   }
 
   static async deleteStaff(staffId) {
-    const list = this.getStaff();
-    const target = list.find(s => s.id === staffId);
-    await removeDoc(COL.staff, staffId);
-    const updated = list.filter(s => s.id !== staffId);
-    setLocalCache('staff', updated);
-    if (target) this.logActivity('Super Admin', 'Removed Staff Account',
-      `${target.name} (${target.phone})`);
+    var list = readCache(COL.staff);
+    var target = list.find(function(s) { return s.id === staffId; });
+    await firestoreDelete(COL.staff, staffId);
+    var updated = list.filter(function(s) { return s.id !== staffId; });
+    writeCache(COL.staff, updated);
+    if (target) {
+      DataStore.logActivity('Super Admin', 'Removed Staff Account',
+        target.name + ' (' + target.phone + ')');
+    }
     return updated;
   }
 
-  // ── ACTIVITY LOGS ───────────────────────────────────────────────────────────
-  static getActivityLogs() {
-    return getLocalCache('activity_logs', INITIAL_ACTIVITY_LOGS);
-  }
+  // ACTIVITY LOGS
+  static getActivityLogs() { return readCache(COL.activity_logs); }
 
   static async fetchActivityLogs() {
-    const data = await fetchAll(COL.activity_logs);
-    if (data) {
-      const sorted = data.sort((a, b) => (b.timestamp > a.timestamp ? 1 : -1));
-      setLocalCache('activity_logs', sorted);
-      return sorted;
-    }
-    return this.getActivityLogs();
+    var data = await firestoreFetchAll(COL.activity_logs);
+    data.sort(function(a, b) { return (b.timestamp || '').localeCompare(a.timestamp || ''); });
+    var trimmed = data.slice(0, 300);
+    writeCache(COL.activity_logs, trimmed);
+    return trimmed;
   }
 
+  // Fire-and-forget log entry - does NOT need to be awaited by callers
   static logActivity(staffName, action, details) {
-    const newLog = {
-      id: `LOG-${Date.now()}`,
+    var newLog = {
+      id: 'LOG-' + Date.now(),
       timestamp: new Date().toISOString().slice(0, 19).replace('T', ' '),
-      staffName, action, details,
+      staffName: staffName,
+      action: action,
+      details: details,
     };
-    // Write to Firestore async (fire-and-forget)
-    upsertDoc(COL.activity_logs, newLog);
-    // Update local cache immediately
-    const logs = this.getActivityLogs();
-    const updated = [newLog, ...logs].slice(0, 200);
-    setLocalCache('activity_logs', updated);
+    firestoreUpsert(COL.activity_logs, newLog).catch(function() {});
+    var logs = readCache(COL.activity_logs);
+    var updated = [newLog].concat(logs).slice(0, 300);
+    writeCache(COL.activity_logs, updated);
     return updated;
+  }
+
+  // Utility: clear all caches on logout
+  static clearAllCaches() {
+    Object.values(COL).forEach(clearCache);
   }
 }

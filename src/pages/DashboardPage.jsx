@@ -48,6 +48,11 @@ export default function DashboardPage() {
   const [editingPurchase, setEditingPurchase] = useState(null);
 
   useEffect(() => {
+    // Purge OLD cache keys from previous localStorage-only version
+    ['invoices','purchases','tasks','inventory','staff','activity_logs'].forEach(k => {
+      localStorage.removeItem(`kdh_${k}`);
+    });
+
     try {
       const stored = localStorage.getItem('kdh_auth_user');
       if (stored) setCurrentUser(JSON.parse(stored));
@@ -57,14 +62,7 @@ export default function DashboardPage() {
   }, []);
 
   const refreshAllData = async () => {
-    // Load from local cache immediately for instant UI
-    setInvoices(DataStore.getInvoices());
-    setPurchases(DataStore.getPurchases());
-    setTasks(DataStore.getTasks());
-    setInventory(DataStore.getInventory());
-    setStaff(DataStore.getStaff());
-    setActivityLogs(DataStore.getActivityLogs());
-    // Then fetch fresh data from Firestore and update
+    // Fetch everything fresh from Firestore (no stale cache pre-load)
     const [inv, purch, tsk, inven, stf, logs] = await Promise.all([
       DataStore.fetchInvoices(),
       DataStore.fetchPurchases(),
@@ -82,6 +80,7 @@ export default function DashboardPage() {
   };
 
   const handleLogout = () => {
+    DataStore.clearAllCaches();
     localStorage.removeItem('kdh_auth_user');
     navigate('/admin');
   };
@@ -143,6 +142,38 @@ export default function DashboardPage() {
     if (window.confirm('Are you sure you want to remove this staff account credential?')) {
       const updated = await DataStore.deleteStaff(staffId);
       setStaff(updated);
+      setActivityLogs(DataStore.getActivityLogs());
+    }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    if (window.confirm('Delete this task permanently from Firestore?')) {
+      const updated = await DataStore.deleteTask(taskId);
+      setTasks(updated);
+      setActivityLogs(DataStore.getActivityLogs());
+    }
+  };
+
+  const handleDeleteInventoryItem = async (itemId) => {
+    if (window.confirm('Delete this inventory item permanently from Firestore?')) {
+      const updated = await DataStore.deleteInventoryItem(itemId);
+      setInventory(updated);
+      setActivityLogs(DataStore.getActivityLogs());
+    }
+  };
+
+  const handleDeleteInvoice = async (invoiceId) => {
+    if (window.confirm('Delete this invoice permanently from Firestore?')) {
+      const updated = await DataStore.deleteInvoice(invoiceId);
+      setInvoices(updated);
+      setActivityLogs(DataStore.getActivityLogs());
+    }
+  };
+
+  const handleDeletePurchase = async (purchaseId) => {
+    if (window.confirm('Delete this purchase bill from Firestore?')) {
+      const updated = await DataStore.deletePurchase(purchaseId);
+      setPurchases(updated);
       setActivityLogs(DataStore.getActivityLogs());
     }
   };
@@ -523,6 +554,7 @@ export default function DashboardPage() {
                     <th className="py-3 px-4 text-right">Input CGST</th>
                     <th className="py-3 px-4 text-right">Input SGST</th>
                     <th className="py-3 px-4 text-right">Total Bill (₹)</th>
+                    <th className="py-3 px-4 text-center">Del</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -538,10 +570,19 @@ export default function DashboardPage() {
                         <div className="text-[10px] text-slate-500">{pur.date}</div>
                       </td>
                       <td className="py-3 px-4 text-slate-600">{pur.description}</td>
-                      <td className="py-3 px-4 text-right font-bold text-slate-900">₹{pur.taxableValue.toLocaleString('en-IN')}</td>
-                      <td className="py-3 px-4 text-right text-emerald-700 font-bold">₹{pur.inputCGST.toLocaleString('en-IN')}</td>
-                      <td className="py-3 px-4 text-right text-emerald-700 font-bold">₹{pur.inputSGST.toLocaleString('en-IN')}</td>
-                      <td className="py-3 px-4 text-right font-extrabold text-slate-900">₹{pur.totalAmount.toLocaleString('en-IN')}</td>
+                      <td className="py-3 px-4 text-right font-bold text-slate-900">₹{(pur.taxableValue||0).toLocaleString('en-IN')}</td>
+                      <td className="py-3 px-4 text-right text-emerald-700 font-bold">₹{(pur.inputCGST||0).toLocaleString('en-IN')}</td>
+                      <td className="py-3 px-4 text-right text-emerald-700 font-bold">₹{(pur.inputSGST||0).toLocaleString('en-IN')}</td>
+                      <td className="py-3 px-4 text-right font-extrabold text-slate-900">₹{(pur.totalAmount||0).toLocaleString('en-IN')}</td>
+                      <td className="py-3 px-4 text-center">
+                        <button
+                          onClick={() => handleDeletePurchase(pur.id)}
+                          className="p-1.5 text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 rounded-lg"
+                          title="Delete from Firestore"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -643,12 +684,22 @@ export default function DashboardPage() {
                             </span>
                             <h4 className="font-bold text-slate-900 text-sm mt-1">{task.customerName}</h4>
                           </div>
-                          <button
-                            onClick={() => { setEditingTask(task); setTaskModalOpen(true); }}
-                            className="text-slate-400 hover:text-slate-700 p-1"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => { setEditingTask(task); setTaskModalOpen(true); }}
+                              className="text-slate-400 hover:text-slate-700 p-1"
+                              title="Edit task"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTask(task.id)}
+                              className="text-red-400 hover:text-red-600 p-1"
+                              title="Delete task from Firestore"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
 
                         <p className="text-xs text-slate-600 font-medium leading-relaxed">
@@ -766,12 +817,22 @@ export default function DashboardPage() {
                         </div>
                       </td>
                       <td className="py-3.5 px-4 text-center">
-                        <button
-                          onClick={() => { setEditingInventoryItem(item); setInventoryModalOpen(true); }}
-                          className="p-1.5 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg"
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => { setEditingInventoryItem(item); setInventoryModalOpen(true); }}
+                            className="p-1.5 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg"
+                            title="Edit item"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteInventoryItem(item.id)}
+                            className="p-1.5 text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 rounded-lg"
+                            title="Delete from Firestore"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
