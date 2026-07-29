@@ -1,9 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Phone, Key, ArrowRight, ShieldCheck, AlertCircle, Wrench } from 'lucide-react';
+import { Phone, Key, ArrowRight, ShieldCheck, AlertCircle, Fingerprint, Sparkles } from 'lucide-react';
 import { BUSINESS_INFO } from '../lib/types';
 import { DataStore } from '../lib/store';
 import { Capacitor } from '@capacitor/core';
+import { 
+  authenticateWithFingerprint, 
+  getSavedBiometricUser, 
+  saveBiometricUser,
+  isBiometricAvailable 
+} from '../lib/biometrics';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -13,6 +19,45 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [bioAvailable, setBioAvailable] = useState(false);
+  const [bioUser, setBioUser] = useState(null);
+
+  useEffect(() => {
+    isBiometricAvailable().then(avail => setBioAvailable(avail));
+    const saved = getSavedBiometricUser();
+    setBioUser(saved);
+  }, []);
+
+  const handleFingerprintLogin = async () => {
+    setErrorMsg('');
+    const saved = getSavedBiometricUser();
+    if (!saved || !saved.phone) {
+      setErrorMsg('No saved staff account on this device. Please log in with Mobile Number & Password once to register your fingerprint.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await authenticateWithFingerprint();
+
+      // Fingerprint verified successfully!
+      localStorage.setItem('kdh_auth_user', JSON.stringify(saved));
+      DataStore.logActivity(saved.name, 'Fingerprint Login', 'Authenticated via native device fingerprint scanner');
+
+      if (saved.role === 'Field Technician') {
+        navigate('/tech-portal', { replace: true });
+      } else {
+        navigate('/admin/dashboard', { replace: true });
+      }
+    } catch (err) {
+      console.error('Fingerprint auth failed:', err);
+      if (err.message && !err.message.includes('Canceled') && !err.message.includes('cancelled') && !err.message.includes('Cancel')) {
+        setErrorMsg(`Fingerprint Scan Error: ${err.message || 'Verification failed.'}`);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
@@ -21,7 +66,6 @@ export default function LoginPage() {
 
     try {
       const cleanPhone = mobileNumber.replace(/[^0-9]/g, '');
-      // Fetch latest staff from Firestore (falls back to local cache if offline)
       const allStaff = await DataStore.fetchStaff();
 
       const foundUser = allStaff.find(
@@ -35,6 +79,8 @@ export default function LoginPage() {
           return;
         }
         localStorage.setItem('kdh_auth_user', JSON.stringify(foundUser));
+        saveBiometricUser(foundUser); // Save user for 1-tap fingerprint authentication!
+        setBioUser(foundUser);
         DataStore.logActivity(foundUser.name, 'Staff Login', 'Logged in successfully');
 
         if (foundUser.role === 'Field Technician') {
@@ -78,7 +124,7 @@ export default function LoginPage() {
           
           <div className="text-center space-y-1">
             <h2 className="text-sm font-bold text-slate-200">Staff Account Authentication</h2>
-            <p className="text-xs text-slate-400">Log in with registered mobile number & password</p>
+            <p className="text-xs text-slate-400">Super Admin, Office Staff & Field Technicians</p>
           </div>
 
           {errorMsg && (
@@ -88,6 +134,34 @@ export default function LoginPage() {
             </div>
           )}
 
+          {/* FINGERPRINT QUICK SIGN IN BUTTON */}
+          <div className="space-y-2 pt-1 border-b border-slate-800 pb-4">
+            <button
+              type="button"
+              disabled={loading}
+              onClick={handleFingerprintLogin}
+              className="w-full bg-slate-950 hover:bg-slate-800 border border-emerald-500/50 hover:border-emerald-400 text-white rounded-2xl p-3 flex items-center justify-between transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/10 cursor-pointer disabled:opacity-50"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                  <Fingerprint className="w-6 h-6 animate-pulse text-emerald-400" />
+                </div>
+                <div className="text-left min-w-0">
+                  <div className="text-xs font-black text-white flex items-center gap-1">
+                    Fingerprint Quick Unlock <Sparkles className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />
+                  </div>
+                  <div className="text-[10px] text-slate-400 truncate">
+                    {bioUser ? `Unlock account for ${bioUser.name}` : 'Instant 1-Tap Sensor Scan'}
+                  </div>
+                </div>
+              </div>
+              <span className="text-[10px] bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 px-2 py-1 rounded-lg font-bold shrink-0">
+                SCAN ➔
+              </span>
+            </button>
+          </div>
+
+          {/* STANDARD PASSWORD LOGIN FORM */}
           <form onSubmit={handleLoginSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">Mobile Phone Number *</label>
@@ -136,7 +210,7 @@ export default function LoginPage() {
 
           <div className="text-[11px] text-slate-500 text-center flex items-center justify-center gap-1 pt-2 border-t border-slate-800">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Secure Real-time Firestore & Cloudinary Application</span>
+            <span>Biometric Encrypted • Kanha Door House ERP</span>
           </div>
 
         </div>
