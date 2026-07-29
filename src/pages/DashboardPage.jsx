@@ -47,19 +47,29 @@ export default function DashboardPage() {
   const [purchaseModalOpen, setPurchaseModalOpen] = useState(false);
   const [editingPurchase, setEditingPurchase] = useState(null);
 
+  const [authChecking, setAuthChecking] = useState(true);
+
   useEffect(() => {
     // Purge OLD cache keys from previous localStorage-only version
     ['invoices','purchases','tasks','inventory','staff','activity_logs'].forEach(k => {
       localStorage.removeItem(`kdh_${k}`);
     });
 
+    let validUser = null;
     try {
       const stored = localStorage.getItem('kdh_auth_user');
-      if (stored) setCurrentUser(JSON.parse(stored));
+      if (stored) validUser = JSON.parse(stored);
     } catch (e) {}
 
+    if (!validUser || !validUser.phone) {
+      navigate('/admin');
+      return;
+    }
+
+    setCurrentUser(validUser);
+    setAuthChecking(false);
     refreshAllData();
-  }, []);
+  }, [navigate]);
 
   const refreshAllData = async () => {
     // Fetch everything fresh from Firestore (no stale cache pre-load)
@@ -227,6 +237,17 @@ export default function DashboardPage() {
            log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
            log.details.toLowerCase().includes(searchQuery.toLowerCase());
   });
+
+  if (authChecking || !currentUser) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center p-4">
+        <div className="text-center space-y-3">
+          <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <div className="text-xs font-bold text-slate-500">Verifying Admin Session...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-8 py-5 sm:py-8 space-y-5 sm:space-y-8">

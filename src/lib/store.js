@@ -54,6 +54,11 @@ async function firestoreFetchAll(colName) {
 async function firestoreUpsert(colName, item) {
   var clean = Object.assign({}, item);
   delete clean._updatedAt;
+  Object.keys(clean).forEach(function(key) {
+    if (clean[key] === undefined) {
+      clean[key] = null;
+    }
+  });
   var ref = doc(db, colName, String(clean.id));
   await setDoc(ref, Object.assign({}, clean, { _updatedAt: serverTimestamp() }), { merge: true });
 }
@@ -181,14 +186,14 @@ export class DataStore {
     var changedTask = null;
     var updated = tasks.map(function(t) {
       if (t.id !== taskId) return t;
-      targetTech = t.assignedTechnician;
+      targetTech = t.assignedTechnician || 'Technician';
       changedTask = Object.assign({}, t, {
         status: status,
-        completionPhotoUrl: photoUrl || t.completionPhotoUrl,
-        notes: notes ? ((t.notes || '') + '\n[Tech Note]: ' + notes) : t.notes,
+        completionPhotoUrl: photoUrl || t.completionPhotoUrl || null,
+        notes: notes ? ((t.notes || '') + '\n[Tech Note]: ' + notes) : (t.notes || ''),
         installedDate: status === 'Installed'
           ? new Date().toISOString().slice(0, 16).replace('T', ' ')
-          : t.installedDate,
+          : (t.installedDate || null),
       });
       return changedTask;
     });

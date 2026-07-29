@@ -1,26 +1,43 @@
 import { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { 
   Wrench, Phone, MapPin, CheckCircle2, Clock, ArrowLeft, 
   Upload, FileText, Calendar, AlertCircle, Play, Check, Navigation,
-  UserCheck, Shield, ChevronRight, Camera, RefreshCw, MessageSquare
+  UserCheck, Shield, ChevronRight, Camera, RefreshCw, MessageSquare, LogOut
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { DataStore } from '../lib/store';
 import { BUSINESS_INFO } from '../lib/types';
 
 export default function TechPortalPage() {
+  const navigate = useNavigate();
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authChecking, setAuthChecking] = useState(true);
+
   const [tasks, setTasks] = useState([]);
   const [staff, setStaff] = useState([]);
-  const [selectedTech, setSelectedTech] = useState('');
   const [statusTab, setStatusTab] = useState('ALL'); // 'ALL', 'Pending Installation', 'In Progress', 'Installed'
+  const [viewAllTeamTasks, setViewAllTeamTasks] = useState(false);
   
   // Interactive state per task
   const [noteInputs, setNoteInputs] = useState({});
   const [photoInputs, setPhotoInputs] = useState({});
   const [updatingTaskId, setUpdatingTaskId] = useState(null);
-  const [activeTabTask, setActiveTabTask] = useState({}); // 'details', 'notes', 'proof'
 
   useEffect(() => {
+    let loggedUser = null;
+    try {
+      const stored = localStorage.getItem('kdh_auth_user');
+      if (stored) loggedUser = JSON.parse(stored);
+    } catch (e) {}
+
+    if (!loggedUser || !loggedUser.phone) {
+      navigate('/admin');
+      return;
+    }
+
+    setCurrentUser(loggedUser);
+    setAuthChecking(false);
+
     // Load cache immediately for fast render
     setTasks(DataStore.getTasks());
     setStaff(DataStore.getStaff());
@@ -32,27 +49,13 @@ export default function TechPortalPage() {
     ]).then(([fetchedTasks, fetchedStaff]) => {
       setTasks(fetchedTasks);
       setStaff(fetchedStaff);
-      if (fetchedStaff.length > 0 && !selectedTech) {
-        setSelectedTech(fetchedStaff[0].name);
-      }
     });
-  }, []);
+  }, [navigate]);
 
-  const currentFitter = staff.find(s => s.name === selectedTech) || null;
-
-  // Filter tasks by technician and status tab
-  const techTasks = selectedTech
-    ? tasks.filter(t => t.assignedTechnician && t.assignedTechnician.toLowerCase().includes(selectedTech.toLowerCase()))
-    : tasks;
-
-  const filteredTasks = statusTab === 'ALL'
-    ? techTasks
-    : techTasks.filter(t => t.status === statusTab);
-
-  // Status counters
-  const pendingCount = techTasks.filter(t => t.status === 'Pending Installation').length;
-  const inProgressCount = techTasks.filter(t => t.status === 'In Progress').length;
-  const installedCount = techTasks.filter(t => t.status === 'Installed').length;
+  const handleLogout = () => {
+    localStorage.removeItem('kdh_auth_user');
+    navigate('/admin');
+  };
 
   const handleStatusTransition = async (taskId, newStatus) => {
     setUpdatingTaskId(taskId);
@@ -64,7 +67,6 @@ export default function TechPortalPage() {
     try {
       const updated = await DataStore.updateTaskStatus(taskId, newStatus, photoUrl, note);
       setTasks(updated);
-      // Clear inputs for this task
       setNoteInputs(prev => ({ ...prev, [taskId]: '' }));
     } catch (err) {
       console.error('Task update failed:', err);
@@ -78,6 +80,33 @@ export default function TechPortalPage() {
     const encoded = encodeURIComponent(address + ', Bihar');
     window.open(`https://www.google.com/maps/search/?api=1&query=${encoded}`, '_blank');
   };
+
+  if (authChecking || !currentUser) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-4">
+        <div className="text-center space-y-3">
+          <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <div className="text-xs font-bold text-slate-400">Verifying Technician Session...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Filter tasks by logged-in technician & status
+  const isManagement = currentUser.role === 'Super Admin' || currentUser.role === 'Office Staff';
+  
+  const techTasks = viewAllTeamTasks && isManagement
+    ? tasks
+    : tasks.filter(t => t.assignedTechnician && t.assignedTechnician.toLowerCase().includes(currentUser.name.toLowerCase()));
+
+  const filteredTasks = statusTab === 'ALL'
+    ? techTasks
+    : techTasks.filter(t => t.status === statusTab);
+
+  // Status counters
+  const pendingCount = techTasks.filter(t => t.status === 'Pending Installation').length;
+  const inProgressCount = techTasks.filter(t => t.status === 'In Progress').length;
+  const installedCount = techTasks.filter(t => t.status === 'Installed').length;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-16">
@@ -98,54 +127,60 @@ export default function TechPortalPage() {
               </div>
             </div>
           </div>
-          <Link to="/" className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors">
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
+          <button
+            onClick={handleLogout}
+            className="p-2 rounded-xl bg-slate-800 text-red-400 hover:text-red-300 hover:bg-slate-700 transition-colors flex items-center gap-1 text-xs font-bold"
+            title="Logout Account"
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="hidden xs:inline">Logout</span>
+          </button>
         </div>
       </header>
 
       <main className="max-w-2xl mx-auto px-4 pt-4 space-y-5">
 
-        {/* TECHNICIAN ACCOUNT SELECTOR CARD */}
+        {/* LOGGED IN FITTER PROFILE CARD */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <UserCheck className="w-4 h-4 text-emerald-400" /> Logged Fitter Profile
-            </span>
-            <span className="text-[11px] bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2.5 py-0.5 rounded-full font-semibold">
-              Active Shift
-            </span>
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-11 h-11 rounded-full bg-emerald-600 text-white font-extrabold flex items-center justify-center text-lg border-2 border-emerald-400/40 shadow-md shrink-0">
+                {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'F'}
+              </div>
+              <div className="min-w-0">
+                <h2 className="font-extrabold text-base text-white leading-snug truncate">{currentUser.name}</h2>
+                <div className="text-xs text-emerald-400 font-semibold truncate">{currentUser.role || 'Field Technician'}</div>
+              </div>
+            </div>
+            <div className="shrink-0 text-right">
+              <span className="text-[11px] bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2.5 py-0.5 rounded-full font-semibold inline-flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Active Session
+              </span>
+            </div>
           </div>
 
-          <div className="relative">
-            <select
-              value={selectedTech}
-              onChange={e => setSelectedTech(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm font-bold text-white focus:outline-none focus:border-emerald-500 transition-colors appearance-none cursor-pointer"
-            >
-              {staff.length === 0 ? (
-                <option value="">No Active Staff Found in Firestore</option>
-              ) : (
-                staff.map(member => (
-                  <option key={member.id} value={member.name}>
-                    {member.name} ({member.role} — {member.phone})
-                  </option>
-                ))
-              )}
-            </select>
-            <div className="pointer-events-none absolute right-3.5 top-3 text-slate-400 text-xs">▼</div>
+          <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-800/80">
+            <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/60">
+              <span className="text-slate-500 block text-[10px]">Logged Mobile</span>
+              <span className="font-mono text-slate-200 font-bold">{currentUser.phone}</span>
+            </div>
+            <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/60">
+              <span className="text-slate-500 block text-[10px]">Assigned Duty Jobs</span>
+              <span className="font-mono text-emerald-400 font-bold truncate block">{techTasks.length} Installations</span>
+            </div>
           </div>
 
-          {currentFitter && (
-            <div className="grid grid-cols-2 gap-2 pt-1 text-xs border-t border-slate-800/80">
-              <div className="bg-slate-950/60 p-2 rounded-lg border border-slate-800/60">
-                <span className="text-slate-500 block text-[10px]">Contact Phone</span>
-                <span className="font-mono text-slate-200 font-bold">{currentFitter.phone}</span>
-              </div>
-              <div className="bg-slate-950/60 p-2 rounded-lg border border-slate-800/60">
-                <span className="text-slate-500 block text-[10px]">Designated Role</span>
-                <span className="text-emerald-400 font-bold truncate block">{currentFitter.role}</span>
-              </div>
+          {isManagement && (
+            <div className="pt-1 flex items-center justify-between text-xs border-t border-slate-800/60">
+              <span className="text-slate-400 text-[11px]">Management View Toggle:</span>
+              <button
+                onClick={() => setViewAllTeamTasks(!viewAllTeamTasks)}
+                className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors ${
+                  viewAllTeamTasks ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-300'
+                }`}
+              >
+                {viewAllTeamTasks ? 'Viewing All Team Tasks' : 'Viewing My Assigned Tasks'}
+              </button>
             </div>
           )}
         </div>
@@ -216,9 +251,7 @@ export default function TechPortalPage() {
               <Wrench className="w-8 h-8 text-slate-700 mx-auto" />
               <div className="text-sm font-bold text-slate-400">No tasks in this category</div>
               <p className="text-xs text-slate-600 max-w-xs mx-auto">
-                {selectedTech
-                  ? `No ${statusTab !== 'ALL' ? statusTab.toLowerCase() : ''} jobs assigned to ${selectedTech}.`
-                  : 'Select your technician account above to see your assigned field duty jobs.'}
+                No {statusTab !== 'ALL' ? statusTab.toLowerCase() : ''} installation jobs assigned to {currentUser.name}.
               </p>
             </div>
           ) : (
@@ -295,14 +328,14 @@ export default function TechPortalPage() {
                       
                       {/* Call Client Action Button */}
                       <a
-                        href={`tel:${task.customerPhone.replace(/\s/g,'')}`}
+                        href={`tel:${(task.customerPhone || '').replace(/\s/g,'')}`}
                         className="flex items-center justify-between p-3 rounded-xl bg-emerald-950/40 hover:bg-emerald-950/80 border border-emerald-800/60 text-emerald-300 transition-colors"
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <Phone className="w-4 h-4 text-emerald-400 shrink-0" />
                           <div className="truncate">
                             <div className="text-[10px] text-slate-400">Client Phone</div>
-                            <div className="font-bold font-mono truncate">{task.customerPhone}</div>
+                            <div className="font-bold font-mono truncate">{task.customerPhone || 'N/A'}</div>
                           </div>
                         </div>
                         <span className="text-[10px] bg-emerald-600 text-white font-bold px-2 py-1 rounded-lg shrink-0">
@@ -312,14 +345,14 @@ export default function TechPortalPage() {
 
                       {/* Google Maps Directions Button */}
                       <button
-                        onClick={() => openGoogleMaps(task.installationAddress)}
+                        onClick={() => openGoogleMaps(task.installationAddress || '')}
                         className="flex items-center justify-between p-3 rounded-xl bg-blue-950/40 hover:bg-blue-950/80 border border-blue-800/60 text-blue-300 transition-colors text-left"
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <Navigation className="w-4 h-4 text-blue-400 shrink-0" />
                           <div className="truncate">
                             <div className="text-[10px] text-slate-400">Installation Address</div>
-                            <div className="font-bold truncate">{task.installationAddress}</div>
+                            <div className="font-bold truncate">{task.installationAddress || 'Jamalpur, Bihar'}</div>
                           </div>
                         </div>
                         <span className="text-[10px] bg-blue-600 text-white font-bold px-2 py-1 rounded-lg shrink-0">
@@ -333,7 +366,7 @@ export default function TechPortalPage() {
                     {task.notes && (
                       <div className="bg-amber-950/20 border border-amber-900/40 p-3 rounded-xl text-xs space-y-1">
                         <div className="font-bold text-amber-400 flex items-center gap-1.5 text-[11px]">
-                          <AlertCircle className="w-3.5 h-3.5" /> Technician Instructions:
+                          <AlertCircle className="w-3.5 h-3.5" /> Technician Instructions / Notes:
                         </div>
                         <p className="text-amber-200/90 whitespace-pre-line leading-relaxed">
                           {task.notes}
@@ -385,7 +418,7 @@ export default function TechPortalPage() {
                         <button
                           disabled={isUpdating}
                           onClick={() => handleStatusTransition(task.id, 'In Progress')}
-                          className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-sm rounded-xl shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
+                          className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-sm rounded-xl shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
                         >
                           {isUpdating ? (
                             <RefreshCw className="w-4 h-4 animate-spin" />
@@ -400,7 +433,7 @@ export default function TechPortalPage() {
                         <button
                           disabled={isUpdating}
                           onClick={() => handleStatusTransition(task.id, 'Installed')}
-                          className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm rounded-xl shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
+                          className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm rounded-xl shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
                         >
                           {isUpdating ? (
                             <RefreshCw className="w-4 h-4 animate-spin" />
