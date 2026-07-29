@@ -1,22 +1,26 @@
 import { useState } from 'react';
 import { X, Wrench, Save } from 'lucide-react';
-import { INITIAL_STAFF } from '../lib/types';
 
-export default function TaskModal({ task: initialTask, invoices = [], onClose, onSave }) {
+export default function TaskModal({ task: initialTask, invoices = [], staff = [], onClose, onSave }) {
+  // Filter all active staff or technicians
+  const fitters = staff.length > 0
+    ? staff.filter(s => s.status !== 'Inactive')
+    : [];
+
   const [task, setTask] = useState(initialTask || {
     id: `TASK-${Math.floor(100 + Math.random() * 900)}`,
-    invoiceId: invoices[0]?.id || 'INV-2026-001',
+    invoiceId: invoices[0]?.id || '',
     customerName: invoices[0]?.customerName || '',
     customerPhone: invoices[0]?.customerPhone || '',
     installationAddress: invoices[0]?.customerAddress || '',
-    workDescription: 'Install 2 UPVC Windows & 1 WPVC Door',
-    assignedTechnician: INITIAL_STAFF[2]?.name || 'Amit Kumar',
-    technicianPhone: INITIAL_STAFF[2]?.phone || '+91 98351 22441',
+    workDescription: invoices[0] ? `Install items from invoice ${invoices[0].id}` : '',
+    assignedTechnician: fitters[0]?.name || 'Unassigned',
+    technicianPhone: fitters[0]?.phone || '',
     deadline: new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0],
     priority: 'Normal',
     status: 'Pending Installation',
-    specs: 'UPVC White Frame, 5mm Toughened Glass',
-    notes: 'Verify frame anchoring before sealing silicone.',
+    specs: 'UPVC / WPVC Machine Cut Fittings',
+    notes: '',
     completionPhotoUrl: null
   });
 
@@ -37,11 +41,11 @@ export default function TaskModal({ task: initialTask, invoices = [], onClose, o
   };
 
   const handleTechSelect = (techName) => {
-    const foundTech = INITIAL_STAFF.find(s => s.name === techName);
+    const foundTech = fitters.find(s => s.name === techName);
     setTask(prev => ({
       ...prev,
       assignedTechnician: techName,
-      technicianPhone: foundTech ? foundTech.phone : '+91 98351 22441'
+      technicianPhone: foundTech ? foundTech.phone : ''
     }));
   };
 
@@ -142,17 +146,21 @@ export default function TaskModal({ task: initialTask, invoices = [], onClose, o
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Assigned Technician Lead</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Assigned Staff / Technician</label>
               <select
                 value={task.assignedTechnician}
                 onChange={e => handleTechSelect(e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg bg-white"
               >
-                {INITIAL_STAFF.filter(s => s.role.includes('Fit') || s.role.includes('Lead')).map(tech => (
-                  <option key={tech.id} value={tech.name}>{tech.name} ({tech.phone})</option>
-                ))}
-                <option value="Amit Kumar">Amit Kumar (+91 98351 22441)</option>
-                <option value="Pankaj Sharma">Pankaj Sharma (+91 97091 44321)</option>
+                {fitters.length === 0 ? (
+                  <option value="">No Active Staff Found in Firestore</option>
+                ) : (
+                  fitters.map(member => (
+                    <option key={member.id} value={member.name}>
+                      {member.name} ({member.role} - {member.phone})
+                    </option>
+                  ))
+                )}
               </select>
             </div>
             <div>
@@ -168,61 +176,71 @@ export default function TaskModal({ task: initialTask, invoices = [], onClose, o
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Priority Level</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Priority</label>
               <select
                 value={task.priority}
                 onChange={e => setTask({ ...task, priority: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg bg-white"
+                className="w-full px-3 py-2 border rounded-lg"
               >
-                <option value="Normal">Normal Priority</option>
+                <option value="Normal">Normal</option>
                 <option value="High">High Priority</option>
-                <option value="Urgent">Urgent / Express</option>
+                <option value="Urgent">Urgent</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Current Installation Status</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Initial Task Status</label>
               <select
                 value={task.status}
                 onChange={e => setTask({ ...task, status: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg font-semibold bg-emerald-50 text-emerald-900 border-emerald-300"
+                className="w-full px-3 py-2 border rounded-lg font-semibold"
               >
                 <option value="Pending Installation">Pending Installation</option>
-                <option value="In Progress">In Progress (Fitter On Site)</option>
+                <option value="In Progress">In Progress</option>
                 <option value="Installed">Installed & Verified</option>
               </select>
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Technician Field Instructions & Specs</label>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Material & Profile Specs Note</label>
             <input
               type="text"
               value={task.specs}
               onChange={e => setTask({ ...task, specs: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg"
-              placeholder="e.g. 5mm Toughened Glass, Bronze Anodized Hardware"
+              placeholder="e.g. UPVC White Frame, 5mm Toughened Glass"
             />
           </div>
 
-          {/* Action Footer */}
-          <div className="flex justify-end gap-2 pt-4 border-t border-slate-200">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Technician Instructions & Site Notes</label>
+            <textarea
+              rows="2"
+              value={task.notes}
+              onChange={e => setTask({ ...task, notes: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg text-slate-600"
+              placeholder="e.g. Carry 100mm SDS drill bits and anchor bolts."
+            ></textarea>
+          </div>
+
+          {/* Buttons */}
+          <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 font-semibold text-slate-600 hover:bg-slate-100 rounded-lg text-xs"
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex items-center gap-1.5 px-5 py-2 font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg text-xs shadow-md"
+              className="flex items-center gap-1.5 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all"
             >
-              <Save className="w-4 h-4 text-emerald-400" /> Allocate Task
+              <Save className="w-4 h-4" /> Save Task to Firestore
             </button>
           </div>
 
         </form>
-
       </div>
     </div>
   );

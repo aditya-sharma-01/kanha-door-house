@@ -977,6 +977,7 @@ export default function DashboardPage() {
         <TaskModal
           task={editingTask}
           invoices={invoices}
+          staff={staff}
           onClose={() => { setTaskModalOpen(false); setEditingTask(null); }}
           onSave={handleSaveTask}
         />

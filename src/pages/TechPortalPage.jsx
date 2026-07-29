@@ -6,13 +6,25 @@ import { BUSINESS_INFO } from '../lib/types';
 
 export default function TechPortalPage() {
   const [tasks, setTasks] = useState([]);
-  const [selectedTech, setSelectedTech] = useState('Amit Kumar');
+  const [staff, setStaff] = useState([]);
+  const [selectedTech, setSelectedTech] = useState('');
   const [noteInput, setNoteInput] = useState({});
 
   useEffect(() => {
-    // Load cache immediately, then refresh from Firestore
+    // Load cache immediately, then fetch fresh from Firestore
     setTasks(DataStore.getTasks());
-    DataStore.fetchTasks().then(setTasks);
+    setStaff(DataStore.getStaff());
+
+    Promise.all([
+      DataStore.fetchTasks(),
+      DataStore.fetchStaff()
+    ]).then(([fetchedTasks, fetchedStaff]) => {
+      setTasks(fetchedTasks);
+      setStaff(fetchedStaff);
+      if (fetchedStaff.length > 0 && !selectedTech) {
+        setSelectedTech(fetchedStaff[0].name);
+      }
+    });
   }, []);
 
   const handleStatusChange = async (taskId, newStatus) => {
@@ -24,7 +36,9 @@ export default function TechPortalPage() {
     setTasks(updated);
   };
 
-  const myTasks = tasks.filter(t => t.assignedTechnician.toLowerCase().includes(selectedTech.toLowerCase()));
+  const myTasks = selectedTech
+    ? tasks.filter(t => t.assignedTechnician && t.assignedTechnician.toLowerCase().includes(selectedTech.toLowerCase()))
+    : tasks;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
@@ -45,16 +59,23 @@ export default function TechPortalPage() {
           {BUSINESS_INFO.name} • Marwadi Mohalla, Jamalpur, Bihar
         </p>
 
-        {/* Technician Selector */}
+        {/* Dynamic Technician Selector */}
         <div className="pt-2">
-          <label className="block text-xs font-semibold text-slate-300 mb-1">Select Active Fitter Account</label>
+          <label className="block text-xs font-semibold text-slate-300 mb-1">Select Active Staff Account</label>
           <select
             value={selectedTech}
             onChange={e => setSelectedTech(e.target.value)}
             className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-bold text-xs"
           >
-            <option value="Amit Kumar">Amit Kumar (Senior Lead - 9835122441)</option>
-            <option value="Pankaj Sharma">Pankaj Sharma (UPVC Fitter - 9709144321)</option>
+            {staff.length === 0 ? (
+              <option value="">No Active Staff Registered</option>
+            ) : (
+              staff.map(member => (
+                <option key={member.id} value={member.name}>
+                  {member.name} ({member.role} - {member.phone})
+                </option>
+              ))
+            )}
           </select>
         </div>
       </div>
@@ -68,94 +89,95 @@ export default function TechPortalPage() {
 
         {myTasks.length === 0 ? (
           <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center text-slate-500 text-xs">
-            No active installation jobs assigned to {selectedTech}.
+            No active installation jobs assigned to {selectedTech || 'selected technician'}.
           </div>
         ) : (
           myTasks.map((task) => (
-            <div key={task.id} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-md space-y-4">
+            <div key={task.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
               
               {/* Task Header */}
-              <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+              <div className="flex justify-between items-start">
                 <div>
-                  <span className="font-mono text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  <span className="font-mono font-bold text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                     {task.id}
                   </span>
-                  <h3 className="font-bold text-slate-900 text-base mt-1">{task.customerName}</h3>
+                  <h3 className="font-extrabold text-slate-900 text-base mt-1">{task.customerName}</h3>
                 </div>
-                <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${task.status === 'Installed' ? 'bg-emerald-100 text-emerald-800' : task.status === 'In Progress' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>
+                <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                  task.status === 'Installed' 
+                    ? 'bg-emerald-100 text-emerald-800' 
+                    : task.status === 'In Progress' 
+                    ? 'bg-amber-100 text-amber-800' 
+                    : 'bg-slate-100 text-slate-700'
+                }`}>
                   {task.status}
                 </span>
               </div>
 
-              {/* Work Scope */}
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs space-y-1">
-                <div className="font-bold text-slate-800">Scope of Work:</div>
-                <p className="text-slate-700 leading-relaxed font-medium">{task.workDescription}</p>
-                <div className="text-slate-500 pt-1">Specs: {task.specs}</div>
+              {/* Location & Specs */}
+              <div className="text-xs text-slate-600 space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <div className="flex items-start gap-2">
+                  <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <span className="font-medium text-slate-800">{task.installationAddress}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <a href={`tel:${task.customerPhone}`} className="text-emerald-700 font-bold hover:underline">
+                    {task.customerPhone} (Call Client)
+                  </a>
+                </div>
+                <div className="pt-1 text-slate-500 border-t border-slate-200/60">
+                  <strong>Work Scope:</strong> {task.workDescription}
+                </div>
+                {task.specs && (
+                  <div className="text-slate-500">
+                    <strong>Specs:</strong> {task.specs}
+                  </div>
+                )}
               </div>
 
-              {/* Quick Actions Grid (Call & Directions) */}
-              <div className="grid grid-cols-2 gap-3">
-                <a
-                  href={`tel:${task.customerPhone}`}
-                  className="py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-xl border border-emerald-200 flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  <Phone className="w-4 h-4 text-emerald-600" /> Call Customer
-                </a>
-                <a
-                  href={`https://maps.google.com/?q=${encodeURIComponent(task.installationAddress)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl border border-slate-200 flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  <MapPin className="w-4 h-4 text-emerald-600" /> Open Map GPS
-                </a>
-              </div>
-
-              {/* Address */}
-              <div className="text-xs text-slate-600 flex items-start gap-2">
-                <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span>{task.installationAddress}</span>
-              </div>
-
-              {/* Technician Notes input */}
+              {/* Notes Input */}
               {task.status !== 'Installed' && (
-                <div className="space-y-1">
-                  <label className="block text-[11px] font-semibold text-slate-500">Installation Notes / Observations</label>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">Add Site Inspection Note (Optional)</label>
                   <input
                     type="text"
-                    placeholder="e.g. Frame fitted with 4 anchor bolts. Silicone sealed."
+                    placeholder="e.g. Frame fitted, silicone sealing remaining..."
                     value={noteInput[task.id] || ''}
                     onChange={e => setNoteInput({ ...noteInput, [task.id]: e.target.value })}
-                    className="w-full px-3 py-1.5 border rounded-lg text-xs"
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
                 </div>
               )}
 
-              {/* Status Update Buttons */}
-              <div className="pt-2 border-t border-slate-100">
+              {/* Action Buttons */}
+              <div className="pt-1 flex flex-col gap-2">
                 {task.status === 'Pending Installation' && (
                   <button
                     onClick={() => handleStatusChange(task.id, 'In Progress')}
-                    className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow transition-colors flex items-center justify-center gap-2"
+                    className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow transition-colors"
                   >
-                    <Clock className="w-4 h-4" /> Start Installation (On Site Now)
+                    Start Fitting (Mark In Progress)
                   </button>
                 )}
+
                 {task.status === 'In Progress' && (
                   <button
                     onClick={() => handleStatusChange(task.id, 'Installed')}
-                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-lg transition-colors flex items-center justify-center gap-2"
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow transition-colors"
                   >
-                    <CheckCircle2 className="w-4 h-4" /> Mark Installation Completed & Attach Photo
+                    ✓ Complete Installation & Upload Proof
                   </button>
                 )}
+
                 {task.status === 'Installed' && (
-                  <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl text-xs text-emerald-800 font-bold flex items-center justify-between">
-                    <span className="flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Completed on {task.installedDate || 'Today'}
+                  <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex items-center justify-between text-xs">
+                    <span className="text-emerald-800 font-bold flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Work Verified & Installed
                     </span>
-                    <span className="text-[11px] font-normal text-emerald-700">Photo Proof Verified</span>
+                    {task.installedDate && (
+                      <span className="text-slate-500 text-[11px] font-mono">{task.installedDate}</span>
+                    )}
                   </div>
                 )}
               </div>
