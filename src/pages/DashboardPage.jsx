@@ -66,6 +66,11 @@ export default function DashboardPage() {
       return;
     }
 
+    if (validUser.role === 'Field Technician') {
+      navigate('/tech-portal');
+      return;
+    }
+
     setCurrentUser(validUser);
     setAuthChecking(false);
     refreshAllData();
