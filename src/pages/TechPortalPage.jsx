@@ -10,16 +10,17 @@ export default function TechPortalPage() {
   const [noteInput, setNoteInput] = useState({});
 
   useEffect(() => {
+    // Load cache immediately, then refresh from Firestore
     setTasks(DataStore.getTasks());
+    DataStore.fetchTasks().then(setTasks);
   }, []);
 
-  const handleStatusChange = (taskId, newStatus) => {
+  const handleStatusChange = async (taskId, newStatus) => {
     const note = noteInput[taskId] || null;
     const samplePhoto = newStatus === 'Installed' 
       ? 'https://images.unsplash.com/photo-1534349735944-2b3a6f7a268f?w=600&auto=format&fit=crop&q=60' 
       : null;
-    
-    const updated = DataStore.updateTaskStatus(taskId, newStatus, samplePhoto, note);
+    const updated = await DataStore.updateTaskStatus(taskId, newStatus, samplePhoto, note);
     setTasks(updated);
   };
 

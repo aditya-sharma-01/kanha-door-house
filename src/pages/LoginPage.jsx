@@ -11,17 +11,16 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLoginSubmit = (e) => {
+  const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setErrorMsg('');
 
-    setTimeout(() => {
-      setLoading(false);
+    try {
       const cleanPhone = mobileNumber.replace(/[^0-9]/g, '');
-      const allStaff = DataStore.getStaff();
-      
-      // Find staff matching phone and password
+      // Fetch latest staff from Firestore (falls back to local cache if offline)
+      const allStaff = await DataStore.fetchStaff();
+
       const foundUser = allStaff.find(
         s => (s.phone === cleanPhone || s.phone.endsWith(cleanPhone)) && s.password === password
       );
@@ -29,12 +28,11 @@ export default function LoginPage() {
       if (foundUser) {
         if (foundUser.status === 'Inactive') {
           setErrorMsg('Account is deactivated. Please contact Super Admin Sonu Sharma.');
+          setLoading(false);
           return;
         }
-
-        // Save current session in localStorage
         localStorage.setItem('kdh_auth_user', JSON.stringify(foundUser));
-        DataStore.logActivity(foundUser.name, 'Staff Login', `Logged in from IP/Device`);
+        DataStore.logActivity(foundUser.name, 'Staff Login', 'Logged in successfully');
 
         if (foundUser.role === 'Field Technician') {
           navigate('/tech-portal');
@@ -44,7 +42,12 @@ export default function LoginPage() {
       } else {
         setErrorMsg('Invalid Mobile Number or Password.');
       }
-    }, 400);
+    } catch (err) {
+      console.error('Login error:', err);
+      setErrorMsg('Connection error. Please check your internet and try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -52,11 +55,11 @@ export default function LoginPage() {
       <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
         
         {/* Header */}
-        <div className="bg-slate-900 text-white p-8 text-center space-y-2">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-600 flex items-center justify-center mx-auto text-white shadow-lg shadow-emerald-600/30">
-            <Lock className="w-6 h-6" />
+        <div className="bg-slate-900 text-white p-6 text-center space-y-2">
+          <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-emerald-500 mx-auto shadow-lg shadow-emerald-600/30">
+            <img src="/logo.jpeg" alt="Kanha Door House" className="w-full h-full object-cover object-center" />
           </div>
-          <h2 className="text-2xl font-extrabold tracking-tight">Staff & Admin Login</h2>
+          <h2 className="text-xl font-extrabold tracking-tight">Staff & Admin Login</h2>
           <p className="text-xs text-slate-400">
             {BUSINESS_INFO.name} • GSTIN: {BUSINESS_INFO.gstin}
           </p>

@@ -4,14 +4,14 @@ export const BUSINESS_INFO = {
   established: "2016",
   gstin: "10EOTP5377R1ZR",
   address: "Marwadi Mohalla, Jamalpur, Bihar - 811214",
-  phone: "+91 95040 83165",
+  phone: "+91 98352 06464",
   email: "kanhadoorhouse.jamalpur@gmail.com",
   stateCode: "10 (Bihar)",
   tagline: "Precision Machine Manufactured WPVC, UPVC, Aluminium & Flush Doors and Windows",
 };
 
 export const INITIAL_STAFF = [
-  { id: "STF-01", name: "Sonu Sharma", role: "Super Admin", phone: "9504083165", password: "admin123", status: "Active", createdDate: "2016-04-01" },
+  { id: "STF-01", name: "Sonu Sharma", role: "Super Admin", phone: "9835206464", password: "admin123", status: "Active", createdDate: "2016-04-01" },
   { id: "STF-02", name: "Rakesh Verma", role: "Office Staff", phone: "7004512389", password: "staff123", status: "Active", createdDate: "2020-02-15" },
   { id: "STF-03", name: "Amit Kumar", role: "Field Technician", phone: "9835122441", password: "tech123", status: "Active", createdDate: "2021-08-10" },
   { id: "STF-04", name: "Pankaj Sharma", role: "Field Technician", phone: "9709144321", password: "tech123", status: "Active", createdDate: "2022-11-05" },

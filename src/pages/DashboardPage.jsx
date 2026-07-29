@@ -56,13 +56,29 @@ export default function DashboardPage() {
     refreshAllData();
   }, []);
 
-  const refreshAllData = () => {
+  const refreshAllData = async () => {
+    // Load from local cache immediately for instant UI
     setInvoices(DataStore.getInvoices());
     setPurchases(DataStore.getPurchases());
     setTasks(DataStore.getTasks());
     setInventory(DataStore.getInventory());
     setStaff(DataStore.getStaff());
     setActivityLogs(DataStore.getActivityLogs());
+    // Then fetch fresh data from Firestore and update
+    const [inv, purch, tsk, inven, stf, logs] = await Promise.all([
+      DataStore.fetchInvoices(),
+      DataStore.fetchPurchases(),
+      DataStore.fetchTasks(),
+      DataStore.fetchInventory(),
+      DataStore.fetchStaff(),
+      DataStore.fetchActivityLogs(),
+    ]);
+    setInvoices(inv);
+    setPurchases(purch);
+    setTasks(tsk);
+    setInventory(inven);
+    setStaff(stf);
+    setActivityLogs(logs);
   };
 
   const handleLogout = () => {
@@ -71,61 +87,61 @@ export default function DashboardPage() {
   };
 
   // Handlers
-  const handleSaveInvoice = (invoiceData) => {
-    const updated = DataStore.saveInvoice(invoiceData);
+  const handleSaveInvoice = async (invoiceData) => {
+    const updated = await DataStore.saveInvoice(invoiceData);
     setInvoices(updated);
     setInvoiceModalOpen(false);
     setEditingInvoice(null);
     setActivityLogs(DataStore.getActivityLogs());
   };
 
-  const handleSavePurchase = (purchaseData) => {
-    const updated = DataStore.savePurchase(purchaseData);
+  const handleSavePurchase = async (purchaseData) => {
+    const updated = await DataStore.savePurchase(purchaseData);
     setPurchases(updated);
     setPurchaseModalOpen(false);
     setEditingPurchase(null);
     setActivityLogs(DataStore.getActivityLogs());
   };
 
-  const handleSaveTask = (taskData) => {
-    const updated = DataStore.saveTask(taskData);
+  const handleSaveTask = async (taskData) => {
+    const updated = await DataStore.saveTask(taskData);
     setTasks(updated);
     setTaskModalOpen(false);
     setEditingTask(null);
     setActivityLogs(DataStore.getActivityLogs());
   };
 
-  const handleUpdateTaskStatus = (taskId, newStatus) => {
-    const updated = DataStore.updateTaskStatus(taskId, newStatus);
+  const handleUpdateTaskStatus = async (taskId, newStatus) => {
+    const updated = await DataStore.updateTaskStatus(taskId, newStatus);
     setTasks(updated);
     setActivityLogs(DataStore.getActivityLogs());
   };
 
-  const handleSaveInventory = (itemData) => {
-    const updated = DataStore.saveInventoryItem(itemData);
+  const handleSaveInventory = async (itemData) => {
+    const updated = await DataStore.saveInventoryItem(itemData);
     setInventory(updated);
     setInventoryModalOpen(false);
     setEditingInventoryItem(null);
     setActivityLogs(DataStore.getActivityLogs());
   };
 
-  const handleQuickStockAdjust = (itemId, delta) => {
-    const updated = DataStore.updateStock(itemId, delta);
+  const handleQuickStockAdjust = async (itemId, delta) => {
+    const updated = await DataStore.updateStock(itemId, delta);
     setInventory(updated);
     setActivityLogs(DataStore.getActivityLogs());
   };
 
-  const handleSaveStaff = (staffData) => {
-    const updated = DataStore.saveStaff(staffData);
+  const handleSaveStaff = async (staffData) => {
+    const updated = await DataStore.saveStaff(staffData);
     setStaff(updated);
     setStaffModalOpen(false);
     setEditingStaffMember(null);
     setActivityLogs(DataStore.getActivityLogs());
   };
 
-  const handleDeleteStaff = (staffId) => {
+  const handleDeleteStaff = async (staffId) => {
     if (window.confirm('Are you sure you want to remove this staff account credential?')) {
-      const updated = DataStore.deleteStaff(staffId);
+      const updated = await DataStore.deleteStaff(staffId);
       setStaff(updated);
       setActivityLogs(DataStore.getActivityLogs());
     }
@@ -182,52 +198,54 @@ export default function DashboardPage() {
   });
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-8 py-8 space-y-8">
+    <div className="max-w-7xl mx-auto px-3 sm:px-8 py-5 sm:py-8 space-y-5 sm:space-y-8">
       
       {/* Top Header Card */}
-      <div className="bg-slate-900 text-white rounded-3xl p-6 sm:p-8 border border-slate-800 shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-        <div>
-          <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-widest">
-            <ShieldCheck className="w-4 h-4" /> Real-time Managerial Hub
+      <div className="bg-slate-900 text-white rounded-2xl p-4 sm:p-8 border border-slate-800 shadow-xl flex flex-col gap-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-emerald-500 shrink-0">
+              <img src="/logo.jpeg" alt="Kanha Door House" className="w-full h-full object-cover object-center" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-2xl font-extrabold leading-tight truncate">Kanha Door House ERP</h1>
+              <div className="text-[11px] text-emerald-400 font-mono truncate">GSTIN: {BUSINESS_INFO.gstin}</div>
+            </div>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold mt-1">Kanha Door House ERP</h1>
-          <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-slate-400">
-            <span>GSTIN: <strong className="font-mono text-emerald-400">{BUSINESS_INFO.gstin}</strong></span>
-            <span>•</span>
-            <span>Jamalpur, Bihar</span>
-            {currentUser && (
-              <span className="bg-emerald-950 border border-emerald-800 text-emerald-300 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1">
-                <User className="w-3 h-3" /> Logged as: {currentUser.name} ({currentUser.role})
-              </span>
-            )}
-          </div>
+          <button
+            onClick={handleLogout}
+            title="Logout"
+            className="flex items-center gap-1 px-3 py-2 bg-red-950/80 hover:bg-red-900 text-red-300 font-bold text-xs rounded-xl border border-red-800 transition-all shrink-0"
+          >
+            <LogOut className="w-4 h-4 text-red-400" />
+            <span className="hidden sm:inline">Logout</span>
+          </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        {currentUser && (
+          <div className="text-xs bg-emerald-950 border border-emerald-800 text-emerald-300 px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 w-fit">
+            <User className="w-3 h-3" /> {currentUser.name} • {currentUser.role}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           <button
             onClick={() => { setEditingInvoice(null); setInvoiceModalOpen(true); }}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/30 transition-all"
+            className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all"
           >
-            <Plus className="w-4 h-4" /> New GST Invoice
+            <Plus className="w-4 h-4" /> New Invoice
           </button>
           <button
             onClick={() => { setEditingTask(null); setTaskModalOpen(true); }}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl border border-slate-700 transition-all"
+            className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl border border-slate-700 transition-all"
           >
             <Wrench className="w-4 h-4 text-emerald-400" /> Allocate Task
           </button>
           <button
             onClick={() => { setEditingInventoryItem(null); setInventoryModalOpen(true); }}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl border border-slate-700 transition-all"
+            className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl border border-slate-700 transition-all col-span-2 sm:col-span-1"
           >
-            <Layers className="w-4 h-4 text-amber-400" /> Add Stock Item
-          </button>
-          <button
-            onClick={handleLogout}
-            title="Log Out Staff Session"
-            className="flex items-center gap-1 px-3 py-2.5 bg-red-950/80 hover:bg-red-900 text-red-300 font-bold text-xs rounded-xl border border-red-800 transition-all"
-          >
-            <LogOut className="w-4 h-4 text-red-400" /> Logout
+            <Layers className="w-4 h-4 text-amber-400" /> Add Stock
           </button>
         </div>
       </div>
@@ -297,43 +315,43 @@ export default function DashboardPage() {
       </div>
 
 
-      {/* MAIN NAVIGATION TABS */}
-      <div className="flex border-b border-slate-200 overflow-x-auto pb-1 gap-2">
+      {/* MAIN NAVIGATION TABS - horizontal scroll on mobile */}
+      <div className="flex overflow-x-auto pb-1 gap-1.5 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap sm:border-b sm:border-slate-200">
         <button
           onClick={() => setActiveTab('invoices')}
-          className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-xs transition-all whitespace-nowrap ${activeTab === 'invoices' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+          className={`flex items-center gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-xl font-bold text-[11px] sm:text-xs transition-all whitespace-nowrap shrink-0 ${activeTab === 'invoices' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
         >
-          <FileText className="w-4 h-4 text-emerald-400" /> Invoices & GST Billing ({invoices.length})
+          <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" /> Invoices ({invoices.length})
         </button>
         <button
           onClick={() => setActiveTab('gst-accounts')}
-          className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-xs transition-all whitespace-nowrap ${activeTab === 'gst-accounts' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+          className={`flex items-center gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-xl font-bold text-[11px] sm:text-xs transition-all whitespace-nowrap shrink-0 ${activeTab === 'gst-accounts' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
         >
-          <Calculator className="w-4 h-4 text-emerald-400" /> GST Accounts & ICAI Financials
+          <Calculator className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" /> GST Accounts
         </button>
         <button
           onClick={() => setActiveTab('tasks')}
-          className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-xs transition-all whitespace-nowrap ${activeTab === 'tasks' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+          className={`flex items-center gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-xl font-bold text-[11px] sm:text-xs transition-all whitespace-nowrap shrink-0 ${activeTab === 'tasks' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
         >
-          <Wrench className="w-4 h-4 text-emerald-400" /> Installation Tasks ({tasks.length})
+          <Wrench className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" /> Tasks ({tasks.length})
         </button>
         <button
           onClick={() => setActiveTab('inventory')}
-          className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-xs transition-all whitespace-nowrap ${activeTab === 'inventory' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+          className={`flex items-center gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-xl font-bold text-[11px] sm:text-xs transition-all whitespace-nowrap shrink-0 ${activeTab === 'inventory' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
         >
-          <Layers className="w-4 h-4 text-amber-400" /> Stock & Inventory ({inventory.length})
+          <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" /> Stock ({inventory.length})
         </button>
         <button
           onClick={() => setActiveTab('staff')}
-          className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-xs transition-all whitespace-nowrap ${activeTab === 'staff' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+          className={`flex items-center gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-xl font-bold text-[11px] sm:text-xs transition-all whitespace-nowrap shrink-0 ${activeTab === 'staff' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
         >
-          <ShieldCheck className="w-4 h-4 text-emerald-400" /> Staff Credentials & Productivity ({staff.length})
+          <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" /> Staff ({staff.length})
         </button>
         <button
           onClick={() => setActiveTab('audit-logs')}
-          className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-xs transition-all whitespace-nowrap ${activeTab === 'audit-logs' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+          className={`flex items-center gap-1.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-xl font-bold text-[11px] sm:text-xs transition-all whitespace-nowrap shrink-0 ${activeTab === 'audit-logs' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
         >
-          <Activity className="w-4 h-4 text-emerald-400" /> Staff Work Audit Log
+          <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" /> Audit Log
         </button>
       </div>
 
