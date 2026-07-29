@@ -1,0 +1,20 @@
+services:
+  # Option A: Render Static Site (Free 1-Click Hosted SPA)
+  - type: web
+    name: kanha-door-house
+    env: static
+    buildCommand: npm run build
+    staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    autoDeploy: true
+
+  # Option B: Render Web Service (Node.js Express / HTTP Server)
+  # - type: web
+  #   name: kanha-door-house-node
+  #   env: node
+  #   buildCommand: npm install && npm run build
+  #   startCommand: npm start
+  #   autoDeploy: true
