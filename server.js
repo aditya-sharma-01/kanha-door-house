@@ -25,6 +25,23 @@ const MIME_TYPES = {
 const server = http.createServer((req, res) => {
   // Clean query params
   const reqUrl = req.url.split('?')[0];
+
+  // Dedicated Render keep-alive ping endpoint
+  if (reqUrl === '/ping' || reqUrl === '/healthz' || reqUrl === '/api/ping') {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Access-Control-Allow-Origin': '*'
+    });
+    res.end(JSON.stringify({
+      status: 'ok',
+      service: 'Kanha Door House Render Keep-Alive',
+      timestamp: new Date().toISOString(),
+      uptimeSeconds: Math.floor(process.uptime())
+    }));
+    return;
+  }
+
   let filePath = path.join(DIST_DIR, reqUrl);
 
   // If path is a directory or root, serve index.html
